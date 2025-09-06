@@ -1,9 +1,25 @@
 [build]
-  command = "npm run build"
-  publish = "dist"
+  command   = "npm run build"
+  publish   = "dist"
   functions = "netlify/functions"
 
+[build.environment]
+  NODE_VERSION = "20"
+  SECRETS_SCAN_OMIT_PATHS = "dist/**, project-files.txt, src/config/repair-kit-config.ts.backup, README.md"
+  # Optional: omit noisy non-secret keys used client-side
+  SECRETS_SCAN_OMIT_KEYS = "VITE_APP_MODE,VITE_OPENAI_MODEL,VITE_ORG_LOGO,VITE_ORG_NAME,VITE_PRIMARY_COLOR,VITE_SECONDARY_COLOR,VITE_AI_CURRICULUM_MODE,VITE_AI_CHAT_ENABLED,VITE_AI_TEMPERATURE,VITE_EMERGENCY_DETECTION_ENABLED,VITE_DEMO_MODE"
+
+[functions]
+  node_bundler = "esbuild"
+
+# If you ever mount API routes under /api/*, proxy them to functions
+[[redirects]]
+  from = "/api/*"
+  to   = "/.netlify/functions/:splat"
+  status = 200
+
+# SPA fallback so client-side routes work
 [[redirects]]
   from = "/*"
-  to = "/index.html"
+  to   = "/index.html"
   status = 200
