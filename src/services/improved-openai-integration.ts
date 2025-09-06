@@ -1,12 +1,30 @@
 // src/services/improved-openai-integration.ts
 import { MENTAL_ARMOR_SKILLS } from "@/data/skills";
 import { EnhancedSkillSuggestions, type SkillSuggestion } from "./enhanced-skill-suggestions";
-import { getOpenAIConfig } from "../config/environment";
 
-const __ENV_OPENAI = getOpenAIConfig();
-const OPENAI_API_KEY = __ENV_OPENAI.apiKey || "";
-const MODEL = __ENV_OPENAI.model || "gpt-4o-mini";
-const BASE_URL = "https://api.openai.com/v1";
+const MODEL = import.meta.env.VITE_OPENAI_MODEL || "gpt-4o-mini";
+const FUNCTION_URL = "/.netlify/functions/openai-chat";
+
+// ---- Serverless OpenAI call (no API key in client) ----
+async function callOpenAI(messages: Array<{ role: "system" | "user" | "assistant"; content: string }>) {
+  const res = await fetch(FUNCTION_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.3,
+      max_tokens: 300,
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Function error ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  // Support either { text } from your function or raw OpenAI shape
+  return data.text || data.choices?.[0]?.message?.content || "";
+}
 
 export type ChatMsg = {
   role: "user" | "assistant" | "system";
@@ -22,11 +40,12 @@ export type CoachPersona = {
 export type CoachResponse = {
   text: string;
   suggestedSkills?: SkillSuggestion[];
-  suggestionMethod: 'curriculum' | 'ai-validated' | 'fallback';
+  suggestionMethod: "curriculum" | "ai-validated" | "fallback";
   content?: string;
   requiresEscalation?: boolean;
 };
 
+// ---- Refusal detection + supportive baseline ----
 function isLikelyRefusal(text: string): boolean {
   const t = text.toLowerCase();
   return [
@@ -42,23 +61,21 @@ function isLikelyRefusal(text: string): boolean {
 function composeSupportiveFirstTurn(_userTurn: string, coach?: CoachPersona): string {
   const coachTag = coach?.name ? ` I’m ${coach.name}.` : "";
   const lead = `I’m really sorry you’re feeling this way.${coachTag} You’re not alone, and I’m here with you.`;
-  const ask  = "What’s making today feel especially heavy?";
+  const ask = "What’s making today feel especially heavy?";
   const nudge = "If you want a Mental Armor™ skill, say the word and I’ll share one with exact steps.";
   return `${lead} ${ask} ${nudge}`;
 }
 
-
-
+// ---- System prompt (curriculum-first) ----
 function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
-  // Create detailed skill catalog with exact curriculum language
   const skillCatalog = MENTAL_ARMOR_SKILLS.map((skill) => {
     return `**${skill.id}**: ${skill.title}
    Goal: ${skill.goal}
    When to use: ${skill.whenToUse}
    Trainer: ${skill.trainer}
-   Modules: ${skill.modules.join(', ')}
-   Steps: ${skill.steps.join(' → ')}`;
-  }).join('\n\n');
+   Modules: ${skill.modules.join(", ")}
+   Steps: ${skill.steps.join(" → ")}`;
+  }).join("\n\n");
 
   const coachHat = coach?.name
     ? `You are "${coach.name}", an expert Mental Armor™ coach. ${coach?.style ?? ""}`.trim()
@@ -72,7 +89,9 @@ function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
     "Focus on supportive coaching using only established Mental Armor™ concepts",
     "If uncertain about curriculum accuracy, be more general rather than specific",
     ...(coach?.guardrails ?? []),
-  ].map(x => `- ${x}`).join("\n");
+  ]
+    .map((x) => `- ${x}`)
+    .join("\n");
 
   return `${coachHat}
 
@@ -130,11 +149,11 @@ If asked about "Mindfulness":
 3. Use in the moment (deep breaths; five-senses grounding: notice what you see/hear/feel, etc.)"
 
 COACH-SPECIFIC GUIDANCE:
-${coach?.name === 'rhonda' ? 'End with: "This skill works if you work it. What\'s your next move?"' : ''}
-${coach?.name === 'scotty' ? 'End with: "Take this one step at a time, with patience and care."' : ''}
-${coach?.name === 'terry' ? 'End with: "This works in the real world when you practice it consistently."' : ''}
-${coach?.name === 'aj' ? 'End with: "This builds on strengths you already have."' : ''}
-${coach?.name === 'chris' ? 'End with: "Growth comes through practicing these steps."' : ''}
+${coach?.name === "rhonda" ? 'End with: "This skill works if you work it. What\'s your next move?"' : ""}
+${coach?.name === "scotty" ? 'End with: "Take this one step at a time, with patience and care."' : ""}
+${coach?.name === "terry" ? 'End with: "This works in the real world when you practice it consistently."' : ""}
+${coach?.name === "aj" ? 'End with: "This builds on strengths you already have."' : ""}
+${coach?.name === "chris" ? 'End with: "Growth comes through practicing these steps."' : ""}
 
 GENERAL COACHING APPROACH:
 - Provide supportive guidance using only curriculum concepts
@@ -144,32 +163,30 @@ GENERAL COACHING APPROACH:
 - Stay within the Mental Armor™ framework at all times`;
 }
 
-// Enhanced skill content delivery function
+// ---- Direct skill content delivery ----
 function getDirectSkillResponse(skillId: string, coach?: CoachPersona): string {
-  const skill = MENTAL_ARMOR_SKILLS.find(s => s.id === skillId);
+  const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId);
   if (!skill) return "";
 
-  // Add coach-specific adlib before skill content
   let response = "";
-  
   if (coach?.name) {
     switch (coach.name.toLowerCase()) {
-      case 'rhonda':
+      case "rhonda":
         response += "That's a fundamental question that requires solid foundations. ";
         break;
-      case 'scotty':
+      case "scotty":
         response += "That's a deep question, friend. Let me share something that might help. ";
         break;
-      case 'terry':
+      case "terry":
         response += "Now that's a question that's been around since humans started thinking. Here's what works in practice: ";
         break;
-      case 'aj':
+      case "aj":
         response += "What an important question! I love that you're thinking about purpose. ";
         break;
-      case 'chris':
+      case "chris":
         response += "That's the kind of question that builds character through reflection. ";
         break;
-      case 'jill':
+      case "jill":
         response += "That's a profound question that touches on our core psychological needs. ";
         break;
       default:
@@ -187,33 +204,31 @@ function getDirectSkillResponse(skillId: string, coach?: CoachPersona): string {
     response += `\n${index + 1}. ${step}`;
   });
 
-  // Add scientific benefits if available
   if (skill.benefits && skill.benefits.length > 0) {
     response += `\n\n**Scientific benefits:**`;
-    skill.benefits.slice(0, 3).forEach(benefit => {
+    skill.benefits.slice(0, 3).forEach((benefit) => {
       response += `\n• ${benefit}`;
     });
   }
 
-  // Add coach-specific encouragement
   if (coach?.name) {
     switch (coach.name.toLowerCase()) {
-      case 'rhonda':
+      case "rhonda":
         response += "\n\nThis skill works if you work it. What's your next move?";
         break;
-      case 'scotty':
+      case "scotty":
         response += "\n\nTake this one step at a time, with patience and care.";
         break;
-      case 'terry':
+      case "terry":
         response += "\n\nThis works in the real world when you practice it consistently.";
         break;
-      case 'aj':
+      case "aj":
         response += "\n\nThis builds on strengths you already have. What do you notice you do well?";
         break;
-      case 'chris':
+      case "chris":
         response += "\n\nGrowth comes through practicing these steps. What's the deeper challenge here?";
         break;
-      case 'jill':
+      case "jill":
         response += "\n\nThis connects to your psychological well-being. How does this resonate with you?";
         break;
       default:
@@ -224,65 +239,55 @@ function getDirectSkillResponse(skillId: string, coach?: CoachPersona): string {
   return response;
 }
 
-// Enhanced skill detection in user input with comprehensive matching
+// ---- Detect skill mentions in user input ----
 function detectMentionedSkills(userInput: string): string[] {
   const input = userInput.toLowerCase();
   const mentionedSkills: string[] = [];
 
-  // Direct skill name matching (exact titles)
+  // Direct title/ID matching
   for (const skill of MENTAL_ARMOR_SKILLS) {
     const titleLower = skill.title.toLowerCase();
-    
-    // Check for exact title match
     if (input.includes(titleLower)) {
       mentionedSkills.push(skill.id);
       continue;
     }
-    
-    // Check for partial title matches (3+ consecutive words)
-    const titleWords = titleLower.split(' ');
+    const titleWords = titleLower.split(" ");
     if (titleWords.length >= 3) {
       for (let i = 0; i <= titleWords.length - 3; i++) {
-        const phrase = titleWords.slice(i, i + 3).join(' ');
+        const phrase = titleWords.slice(i, i + 3).join(" ");
         if (input.includes(phrase)) {
           mentionedSkills.push(skill.id);
           break;
         }
       }
     }
-    
-    // Check for skill ID mention
     if (input.includes(skill.id)) {
       mentionedSkills.push(skill.id);
     }
   }
 
-  // Enhanced keyword-based skill detection with context
+  // Keyword-based with context
   const skillKeywords = {
-    'foundations-resilience': ['foundations', 'resilience foundation', 'resilience science', 'neuroplasticity', 'growth mindset'],
-    'flex-your-strengths': ['flex strengths', 'character strengths', 'VIA', 'signature strengths', 'strengths finder'],
-    'values-based-living': ['values based', 'values living', 'core values', 'purpose', 'meaningful goals'],
-    'spiritual-resilience': ['spiritual resilience', 'spiritual strength', 'faith', 'meaning', 'transcendence'],
-    'cultivate-gratitude': ['cultivate gratitude', 'gratitude practice', 'thankfulness', 'appreciation'],
-    'mindfulness': ['mindfulness', 'mindful', 'meditation', 'present moment', 'awareness'],
-    'reframe': ['reframe', 'reframing', 'cognitive reframe', 'change perspective'],
-    'balance-your-thinking': ['balance thinking', 'thinking balance', 'cognitive balance', 'examine evidence'],
-    'whats-most-important': ['most important', 'priorities', 'what matters', 'values clarification'],
-    'interpersonal-problem-solving': ['interpersonal', 'problem solving', 'conflict resolution', 'wind-up approach'],
-    'good-listening': ['good listening', 'active listening', 'celebrate good news', 'ABCDE']
+    "foundations-resilience": ["foundations", "resilience foundation", "resilience science", "neuroplasticity", "growth mindset"],
+    "flex-your-strengths": ["flex strengths", "character strengths", "VIA", "signature strengths", "strengths finder"],
+    "values-based-living": ["values based", "values living", "core values", "purpose", "meaningful goals"],
+    "spiritual-resilience": ["spiritual resilience", "spiritual strength", "faith", "meaning", "transcendence"],
+    "cultivate-gratitude": ["cultivate gratitude", "gratitude practice", "thankfulness", "appreciation"],
+    mindfulness: ["mindfulness", "mindful", "meditation", "present moment", "awareness"],
+    reframe: ["reframe", "reframing", "cognitive reframe", "change perspective"],
+    "balance-your-thinking": ["balance thinking", "thinking balance", "cognitive balance", "examine evidence"],
+    "whats-most-important": ["most important", "priorities", "what matters", "values clarification"],
+    "interpersonal-problem-solving": ["interpersonal", "problem solving", "conflict resolution", "wind-up approach"],
+    "good-listening": ["good listening", "active listening", "celebrate good news", "ABCDE"],
   };
 
-  // Check for skill-specific keywords with context
   for (const [skillId, keywords] of Object.entries(skillKeywords)) {
     if (mentionedSkills.includes(skillId)) continue;
-    
     for (const keyword of keywords) {
-      if (input.includes(keyword)) {
-        // Only add if it seems like they're asking about the skill specifically
-        const contextWords = ['what is', 'tell me about', 'explain', 'describe', 'skill', 'about', 'how to', 'steps'];
-        const hasContext = contextWords.some(word => input.includes(word));
-        
-        if (hasContext || input.length < 50) { // Short messages are likely direct questions
+      if (input.includes(keyword.toLowerCase())) {
+        const contextWords = ["what is", "tell me about", "explain", "describe", "skill", "about", "how to", "steps"];
+        const hasContext = contextWords.some((word) => input.includes(word));
+        if (hasContext || input.length < 50) {
           mentionedSkills.push(skillId);
           break;
         }
@@ -290,37 +295,64 @@ function detectMentionedSkills(userInput: string): string[] {
     }
   }
 
-  return [...new Set(mentionedSkills)]; // Remove duplicates
+  return [...new Set(mentionedSkills)];
 }
 
-async function callOpenAI(messages: Array<{ role: "system" | "user" | "assistant"; content: string }>) {
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      response_format: { type: "text" },
-      temperature: 0.3,
-      max_tokens: 300,
-      messages,
-    }),
-  });
+// ---- Validate curriculum references ----
+function validateCurriculumLanguage(text: string): string {
+  const validSkillTitles = MENTAL_ARMOR_SKILLS.map((s) => s.title.toLowerCase());
+  const lines = text.split("\n");
 
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`OpenAI error ${res.status}: ${t || res.statusText}`);
+  return lines
+    .map((line: string) => {
+      const lowerLine = line.toLowerCase();
+      const mentionsInvalidSkill =
+        lowerLine.includes("skill") && !validSkillTitles.some((title) => lowerLine.includes(title));
+
+      if (mentionsInvalidSkill) {
+        return line
+          .replace(/try the .* skill/gi, "consider using Mental Armor™ techniques")
+          .replace(/use .* skill/gi, "apply your training")
+          .replace(/practice .* skill/gi, "practice your techniques");
+      }
+
+      return line;
+    })
+    .join("\n");
+}
+
+// ---- Fallback response ----
+function getFallbackResponse(coach?: CoachPersona): string {
+  const fallbacks = [
+    "I hear what you're sharing. Mental Armor™ training gives us tools to build resilience through practice.",
+    "That sounds challenging. The Mental Armor™ approach helps us develop skills to withstand, recover, and grow.",
+    "Thank you for sharing that with me. Building mental armor takes practice and the right tools for each situation.",
+  ];
+
+  let response = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+  if (coach?.name) {
+    switch (coach.name.toLowerCase()) {
+      case "rhonda":
+        response += " What's your next move?";
+        break;
+      case "scotty":
+        response += " Take it one step at a time.";
+        break;
+      case "terry":
+        response += " Let's focus on what works in the real world.";
+        break;
+      case "aj":
+        response += " You have strengths to build on.";
+        break;
+      case "chris":
+        response += " Growth comes through practice and reflection.";
+        break;
+    }
   }
-  
-  const data = await res.json();
-  const choice = data?.choices?.[0];
-  const text = choice?.message?.content ?? "";
-  return text;
+  return response;
 }
 
-// Updated main response function with integrated approach
+// ---- Main response function ----
 export async function getImprovedCoachResponse(opts: {
   history: ChatMsg[];
   userTurn: string;
@@ -329,136 +361,63 @@ export async function getImprovedCoachResponse(opts: {
 }): Promise<CoachResponse> {
   const { history, userTurn, coach, allowSuggestions = true } = opts;
 
-  // 1. Check if user is asking about a specific skill - PRIORITY RESPONSE
+  // 1) If user asked about a specific skill, return exact curriculum content
   const mentionedSkills = detectMentionedSkills(userTurn);
-  
   if (mentionedSkills.length > 0) {
-    // Respond directly with exact curriculum content
     const skillResponse = getDirectSkillResponse(mentionedSkills[0], coach);
-    
-    // Still provide skill suggestions for related skills
-    const relatedSuggestions = allowSuggestions ? 
-      EnhancedSkillSuggestions.getSuggestions(userTurn, 2).filter(s => s.skillId !== mentionedSkills[0]) : 
-      [];
-    
+    const relatedSuggestions = allowSuggestions
+      ? EnhancedSkillSuggestions.getSuggestions(userTurn, 2).filter((s) => s.skillId !== mentionedSkills[0])
+      : [];
     return {
       text: skillResponse,
       suggestedSkills: relatedSuggestions,
-      suggestionMethod: 'curriculum',
+      suggestionMethod: "curriculum",
       content: skillResponse,
     };
   }
 
-  // 2. Get curriculum-based skill suggestions
+  // 2) Curriculum-based suggestions (separate from the chat)
   let suggestedSkills: SkillSuggestion[] = [];
-  let suggestionMethod: 'curriculum' | 'ai-validated' | 'fallback' = 'curriculum';
-
+  let suggestionMethod: "curriculum" | "ai-validated" | "fallback" = "curriculum";
   if (allowSuggestions) {
     try {
       suggestedSkills = EnhancedSkillSuggestions.getSuggestions(userTurn, 2);
-      suggestionMethod = 'curriculum';
+      suggestionMethod = "curriculum";
     } catch (error) {
-      console.warn('Curriculum suggestions failed:', error);
-      suggestionMethod = 'fallback';
+      console.warn("Curriculum suggestions failed:", error);
+      suggestionMethod = "fallback";
     }
   }
 
- // 3. Get AI coaching response with comprehensive integrated prompt
-const sys = buildEnhancedSystemPrompt(coach);
-const messages = [
-  { role: "system" as const, content: sys },
-  ...history.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  })),
-  { role: "user" as const, content: userTurn },
-];
-
-let text = "";
-try {
-  text = await callOpenAI(messages);
-  // If the base model refused, replace with our supportive, curious baseline
-  if (isLikelyRefusal(text)) {
-    text = composeSupportiveFirstTurn(userTurn, coach);
-  }
-  text = validateCurriculumLanguage(text);
-} catch (error) {
-  console.warn("OpenAI call failed:", error);
-  text = getFallbackResponse(coach);
-}
-
-return {
-  text: text.trim(),
-  suggestedSkills,
-  suggestionMethod,
-  content: text.trim(),
-};
-}
-
-
-/**
- * Validate that AI response doesn't reference non-existent skills
- */
-function validateCurriculumLanguage(text: string): string {
-  const validSkillTitles = MENTAL_ARMOR_SKILLS.map((s) => s.title.toLowerCase());
-  const lines = text.split('\n');
-  
-  return lines.map((line: string) => {
-    // Remove any references to skills not in our catalog
-    const lowerLine = line.toLowerCase();
-    
-    // Check if line mentions skills not in our catalog
-    const mentionsInvalidSkill = lowerLine.includes('skill') && 
-      !validSkillTitles.some((title: string) => lowerLine.includes(title));
-    
-    if (mentionsInvalidSkill) {
-      // Replace with more general language
-      return line.replace(/try the .* skill/gi, 'consider using Mental Armor™ techniques')
-                .replace(/use .* skill/gi, 'apply your training')
-                .replace(/practice .* skill/gi, 'practice your techniques');
-    }
-    
-    return line;
-  }).join('\n');
-}
-
-/**
- * Fallback responses that stay within curriculum
- */
-function getFallbackResponse(coach?: CoachPersona): string {
-  const fallbacks = [
-    "I hear what you're sharing. Mental Armor™ training gives us tools to build resilience through practice.",
-    "That sounds challenging. The Mental Armor™ approach helps us develop skills to withstand, recover, and grow.",
-    "Thank you for sharing that with me. Building mental armor takes practice and the right tools for each situation.",
+  // 3) Chat completion with system prompt (via Netlify function)
+  const sys = buildEnhancedSystemPrompt(coach);
+  const messages = [
+    { role: "system" as const, content: sys },
+    ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    { role: "user" as const, content: userTurn },
   ];
-  
-  let response = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-  
-  // Add coach-specific guidance without referencing specific skills
-  if (coach?.name) {
-    switch (coach.name.toLowerCase()) {
-      case 'rhonda':
-        response += " What's your next move?";
-        break;
-      case 'scotty':
-        response += " Take it one step at a time.";
-        break;
-      case 'terry':
-        response += " Let's focus on what works in the real world.";
-        break;
-      case 'aj':
-        response += " You have strengths to build on.";
-        break;
-      case 'chris':
-        response += " Growth comes through practice and reflection.";
-        break;
+
+  let text = "";
+  try {
+    text = await callOpenAI(messages);
+    if (isLikelyRefusal(text)) {
+      text = composeSupportiveFirstTurn(userTurn, coach);
     }
+    text = validateCurriculumLanguage(text);
+  } catch (error) {
+    console.warn("OpenAI call failed:", error);
+    text = getFallbackResponse(coach);
   }
-  
-  return response;
+
+  return {
+    text: text.trim(),
+    suggestedSkills,
+    suggestionMethod,
+    content: text.trim(),
+  };
 }
 
-// Backward compatibility wrapper
+// ---- Wrapper used by RepairKit.tsx ----
 export function createMentalArmorAI(config?: string | { coach?: CoachPersona; allowSuggestions?: boolean }) {
   let coach: CoachPersona | undefined;
   let allowSuggestions = true;
@@ -472,31 +431,21 @@ export function createMentalArmorAI(config?: string | { coach?: CoachPersona; al
 
   return {
     async send(userText: string, history: ChatMsg[]) {
-      return getImprovedCoachResponse({ 
-        history, 
-        userTurn: userText, 
-        coach, 
-        allowSuggestions 
-      });
+      return getImprovedCoachResponse({ history, userTurn: userText, coach, allowSuggestions });
     },
 
     // Legacy compatibility
     async generateResponse(...args: unknown[]) {
       let userText = "";
       let history: ChatMsg[] = [];
-      
+
       if (args.length === 2) {
         [userText, history] = args as [string, ChatMsg[]];
       } else if (args.length === 3) {
         [userText, , history] = args as [string, unknown, ChatMsg[]];
       }
-      
-      return getImprovedCoachResponse({ 
-        history, 
-        userTurn: userText, 
-        coach, 
-        allowSuggestions 
-      });
+
+      return getImprovedCoachResponse({ history, userTurn: userText, coach, allowSuggestions });
     },
   };
 }

@@ -3,8 +3,7 @@
 export interface AppEnvironment {
   mode: 'development' | 'production' | 'demo';
   openai: {
-    apiKey?: string;
-    enabled: boolean;
+    enabled: boolean;   // client flag only — no key here
     model: string;
   };
   features: {
@@ -23,17 +22,17 @@ export interface AppEnvironment {
   };
 }
 
-// Default configuration
+// Defaults used if no env vars provided
 const defaultConfig: AppEnvironment = {
   mode: 'development',
   openai: {
-    enabled: false, // Set to true when you have API key
-    model: 'gpt-4',
+    enabled: false,     // client can be enabled without exposing key
+    model: 'gpt-4o-mini',
   },
   features: {
     emergencyDetection: true,
-    aiChatEnabled: false, // Will be true when OpenAI is configured
-    dataCollection: false, // For demo mode
+    aiChatEnabled: false,
+    dataCollection: false,
     analytics: false,
   },
   organization: {
@@ -41,98 +40,51 @@ const defaultConfig: AppEnvironment = {
     logoUrl: '/logo.png',
     customColors: {
       primary: '#003049',
-      secondary: '#1E3A8A'
-    }
-  }
+      secondary: '#1E3A8A',
+    },
+  },
 };
 
-// Production configuration template
-const productionConfig: AppEnvironment = {
-  mode: 'production',
-  openai: {
-    enabled: true,
-    model: 'gpt-4',
-    // apiKey will be loaded from environment variable
-  },
-  features: {
-    emergencyDetection: true,
-    aiChatEnabled: true,
-    dataCollection: true,
-    analytics: true,
-  },
-  organization: {
-    name: 'Your Organization Name',
-    logoUrl: '/your-logo.png',
-    customColors: {
-      primary: '#003049',
-      secondary: '#1E3A8A'
-    }
-  }
-};
-
-// Demo configuration for tradeshows
-const demoConfig: AppEnvironment = {
-  mode: 'demo',
-  openai: {
-    enabled: false, // Use simulated responses
-    model: 'gpt-4',
-  },
-  features: {
-    emergencyDetection: true,
-    aiChatEnabled: true, // Simulated
-    dataCollection: false,
-    analytics: false,
-  },
-  organization: {
-    name: 'Demo Fire Department',
-    logoUrl: '/demo-logo.png',
-  }
-};
-
-// Environment detection and configuration loading
 export function loadEnvironmentConfig(): AppEnvironment {
   const mode = (import.meta.env.VITE_APP_MODE as AppEnvironment['mode']) || 'development';
-  
-  switch (mode) {
-    case 'production':
-      return {
-        ...productionConfig,
-        openai: {
-          ...productionConfig.openai,
-          apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-          enabled: !!import.meta.env.VITE_OPENAI_API_KEY,
-        },
-        features: {
-          ...productionConfig.features,
-          aiChatEnabled: !!import.meta.env.VITE_OPENAI_API_KEY,
-        },
-        organization: {
-          ...productionConfig.organization,
-          name: import.meta.env.VITE_ORG_NAME || productionConfig.organization.name,
-          logoUrl: import.meta.env.VITE_ORG_LOGO || productionConfig.organization.logoUrl,
-        }
-      };
-      
-    case 'demo':
-      return demoConfig;
-      
-    default:
-      return {
-        ...defaultConfig,
-        openai: {
-          ...defaultConfig.openai,
-          apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-          enabled: !!import.meta.env.VITE_OPENAI_API_KEY,
-        },
-        features: {
-          ...defaultConfig.features,
-          aiChatEnabled: !!import.meta.env.VITE_OPENAI_API_KEY,
-        }
-      };
-  }
+
+  const model = import.meta.env.VITE_OPENAI_MODEL || defaultConfig.openai.model;
+  const aiChatEnabled =
+    (import.meta.env.VITE_AI_CHAT_ENABLED?.toString() === 'true') ||
+    (mode === 'production'); // enable by default in prod if you want
+
+  const emergencyDetection =
+    import.meta.env.VITE_EMERGENCY_DETECTION_ENABLED?.toString() === 'false' ? false : true;
+
+  const orgName = import.meta.env.VITE_ORG_NAME || defaultConfig.organization.name;
+  const orgLogo = import.meta.env.VITE_ORG_LOGO || defaultConfig.organization.logoUrl;
+  const primary = import.meta.env.VITE_PRIMARY_COLOR || defaultConfig.organization.customColors?.primary || '#003049';
+  const secondary = import.meta.env.VITE_SECONDARY_COLOR || defaultConfig.organization.customColors?.secondary || '#1E3A8A';
+
+  return {
+    mode,
+    openai: {
+      enabled: aiChatEnabled, // client-side flag; actual key is server-only
+      model,
+    },
+    features: {
+      emergencyDetection,
+      aiChatEnabled,
+      dataCollection: mode === 'production',
+      analytics: mode === 'production',
+    },
+    organization: {
+      name: orgName,
+      logoUrl: orgLogo,
+      customColors: {
+        primary,
+        secondary,
+      },
+    },
+  };
 }
 
-// Utility functions
+// Helpers (safe to keep)
 export function isFeatureEnabled(feature: keyof AppEnvironment['features']): boolean {
   const config = loadEnvironmentConfig();
   return config.features[feature];
@@ -140,6 +92,7 @@ export function isFeatureEnabled(feature: keyof AppEnvironment['features']): boo
 
 export function getOpenAIConfig() {
   const config = loadEnvironmentConfig();
+  // Intentionally NO apiKey here — serverless function uses process.env.OPENAI_API_KEY
   return config.openai;
 }
 
@@ -151,36 +104,24 @@ export function isProductionMode(): boolean {
   return loadEnvironmentConfig().mode === 'production';
 }
 
-// Export the current configuration
 export const appConfig = loadEnvironmentConfig();
 
 /*
-ENVIRONMENT VARIABLES TO SET UP:
-
-For development (.env.local):
-VITE_APP_MODE=development
-VITE_OPENAI_API_KEY=your_openai_api_key_here
+ENV VARS (CLIENT — OK TO EXPOSE):
+VITE_APP_MODE=development|production|demo
+VITE_OPENAI_MODEL=gpt-4o-mini
+VITE_AI_CHAT_ENABLED=true|false
+VITE_EMERGENCY_DETECTION_ENABLED=true|false
 VITE_ORG_NAME="Your Organization Name"
 VITE_ORG_LOGO="/your-logo.png"
+VITE_PRIMARY_COLOR=#003049
+VITE_SECONDARY_COLOR=#1E3A8A
 
-For production (.env.production):
-VITE_APP_MODE=production
-VITE_OPENAI_API_KEY=your_production_openai_api_key
-VITE_ORG_NAME="Your Organization Name"
-VITE_ORG_LOGO="/your-logo.png"
+ENV VARS (SERVER ONLY — DO NOT PREFIX WITH VITE_):
+OPENAI_API_KEY=sk-... (Netlify > Site settings > Environment variables)
 
-For demo (.env.demo):
-VITE_APP_MODE=demo
-
-NETLIFY DEPLOYMENT:
-In your Netlify dashboard, set these environment variables:
-- VITE_APP_MODE: production (or demo for demo version)
-- VITE_OPENAI_API_KEY: your API key
-- VITE_ORG_NAME: your organization name
-- VITE_ORG_LOGO: path to your logo
-
-GITHUB INTEGRATION:
-1. Add these environment variables to your GitHub repository secrets
-2. Update your build command in package.json to use the appropriate .env file
-3. Netlify will automatically pick up the environment variables from your build
+Netlify secrets scan:
+- Allow the non-sensitive VITE_* vars by setting SECRETS_SCAN_OMIT_KEYS
+  (comma-separated) to: VITE_APP_MODE,VITE_OPENAI_MODEL,VITE_AI_CHAT_ENABLED,VITE_EMERGENCY_DETECTION_ENABLED,VITE_ORG_NAME,VITE_ORG_LOGO,VITE_PRIMARY_COLOR,VITE_SECONDARY_COLOR
+- Keep OPENAI_API_KEY as server-only; never expose it in client code.
 */
