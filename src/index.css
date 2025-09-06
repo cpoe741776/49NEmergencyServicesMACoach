@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  /* 49 North brand */
+  --color-brand-primary: #003049;
+  --color-brand-primary-dark: #002538;
+  --color-brand-primary-light: #e6f0f5;
+
+  /* Emergency Services palette */
+  --color-es-red:   #B91C1C; /* Fire */
+  --color-es-amber: #F59E0B; /* Hi-vis amber */
+  --color-es-blue:  #1E3A8A; /* EMS/Police blue */
+  --color-es-green: #065F46; /* Operational green */
+}
+
+/* optional: tiny utility to demo clamping */
+.demo-card { max-width: 28rem; }
+
+/* Make each grid row equal height and let cards fill the row height */
+.grid-equal {
+  grid-auto-rows: 1fr;
+}
