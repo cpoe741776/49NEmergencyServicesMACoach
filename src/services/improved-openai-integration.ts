@@ -13,7 +13,7 @@ async function callOpenAI(messages: Array<{ role: "system" | "user" | "assistant
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: MODEL,
-      temperature: 0.5,
+      temperature: 0.6,
       max_tokens: 350,
       messages,
     }),
