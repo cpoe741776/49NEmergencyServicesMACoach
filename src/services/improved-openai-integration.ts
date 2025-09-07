@@ -40,7 +40,7 @@ export type CoachPersona = {
 };
 
 export type CoachingContext = {
-  mode?: 'active_coaching' | 'general_support';
+  mode?: "active_coaching" | "general_support";
   skillId?: string;
   skillTitle?: string;
   currentStep?: number;
@@ -69,9 +69,8 @@ export type CoachResponse = {
 // ============================================================================
 function detectCriticalEmergency(text: string): boolean {
   const s = text.toLowerCase();
-  if (s.length < 10) return false; // Avoid false positives on short responses
+  if (s.length < 10) return false;
 
-  // Only trigger for explicit self-harm or suicide intent
   const criticalPatterns: RegExp[] = [
     /\b(i|we)\s+(am|'m|will|going to|plan to|want to)\s+(kill myself|end my life|commit suicide|take my life)\b/,
     /\b(i|we)\s+(am|'m|will|going to|plan to|want to)\s+(hurt myself|cut myself|harm myself)\b/,
@@ -79,7 +78,7 @@ function detectCriticalEmergency(text: string): boolean {
     /\b(suicide|kill myself|end it all|better off dead)\b.*\b(tonight|today|now|soon)\b/,
   ];
 
-  return criticalPatterns.some(pattern => pattern.test(s));
+  return criticalPatterns.some((pattern) => pattern.test(s));
 }
 
 function detectImminentThreatIntent(text: string): boolean {
@@ -111,7 +110,7 @@ function detectSeriousCrimeAdmission(text: string): boolean {
     /\b(i|we)\s+(have\s+)?(abused|hurt|molested|assaulted)\b.*\b(child|kid|minor)\b/,
   ];
 
-  return patterns.some(re => re.test(s));
+  return patterns.some((re) => re.test(s));
 }
 
 function imminentThreatResponse(): string {
@@ -134,7 +133,7 @@ function seriousCrimeResponse(): string {
     "",
     "For legal matters, speak with a qualified attorney. I cannot provide advice on illegal activities or help conceal them.",
     "",
-    "If you're struggling with what happened and there's risk of harm to you or others, reach out for urgent support (e.g., your local crisis line or emergency services)."
+    "If you're struggling with what happened and there's risk of harm to you or others, reach out for urgent support (e.g., your local crisis line or emergency services).",
   ].join("\n");
 }
 
@@ -157,7 +156,7 @@ function criticalEmergencyResponse(): string {
     "• Crisis Text Line: Text SHOUT to 85258 (24/7)",
     "• Emergency: 999",
     "",
-    "Your life has value. These resources are here to help you through this moment."
+    "Your life has value. These resources are here to help you through this moment.",
   ].join("\n");
 }
 
@@ -169,8 +168,8 @@ function resolveCoachPersona(input?: CoachPersona): CoachPersona | undefined {
 
   const t =
     (input.id && getTrainerById(input.id)) ||
-    TRAINERS.find(tr => tr.id.toLowerCase() === (input.name ?? "").toLowerCase()) ||
-    TRAINERS.find(tr => tr.name.toLowerCase() === (input.name ?? "").toLowerCase());
+    TRAINERS.find((tr) => tr.id.toLowerCase() === (input.name ?? "").toLowerCase()) ||
+    TRAINERS.find((tr) => tr.name.toLowerCase() === (input.name ?? "").toLowerCase());
 
   return {
     id: input.id ?? t?.id,
@@ -187,17 +186,15 @@ function resolveCoachPersona(input?: CoachPersona): CoachPersona | undefined {
 function buildFocusedCoachingPrompt(coach?: CoachPersona, context?: CoachingContext): string {
   const resolvedCoach = resolveCoachPersona(coach);
   const coachVoice = resolvedCoach?.voice ?? "You are a professional, supportive Mental Armor™ coach.";
-  
-  // Enhanced voice application with more specific instructions
+
   const voiceInstructions = buildVoiceInstructions(resolvedCoach);
-  
-  const isActiveCoaching = context?.mode === 'active_coaching' && context?.skillId;
-  
+  const isActiveCoaching = context?.mode === "active_coaching" && context?.skillId;
+
   if (isActiveCoaching) {
-    const skill = MENTAL_ARMOR_SKILLS.find(s => s.id === context.skillId);
+    const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === context.skillId);
     const currentStep = context.currentStep || 1;
     const totalSteps = skill?.steps.length || 1;
-    
+
     return `${coachVoice}
 
 ${voiceInstructions}
@@ -207,7 +204,7 @@ Current Step: ${currentStep} of ${totalSteps}
 
 COACHING FOCUS RULES:
 - You are ONLY coaching the user through "${skill?.title}" step by step
-- CURRENT STEP FOCUS: "${skill?.steps[currentStep - 1] || 'Review and practice'}"
+- CURRENT STEP FOCUS: "${skill?.steps[currentStep - 1] || "Review and practice"}"
 - Do NOT suggest other skills, jump topics, or provide emergency resources unless user explicitly mentions self-harm/suicide
 - Guide them through THIS specific step before moving forward
 - Ask ONE focused question about the current step to help them practice it
@@ -219,9 +216,10 @@ STRICT BOUNDARIES:
 - Keep responses under 3 sentences to maintain focus
 - Only end session if user explicitly says they want to stop or are done
 
-${currentStep <= totalSteps ? 
-  `Help them complete step ${currentStep}: "${skill?.steps[currentStep - 1] || 'Complete the practice'}"` :
-  `Help them review what they learned and apply this skill going forward.`
+${
+  currentStep <= totalSteps
+    ? `Help them complete step ${currentStep}: "${skill?.steps[currentStep - 1] || "Complete the practice"}"`
+    : `Help them review what they learned and apply this skill going forward.`
 }`;
   }
 
@@ -230,7 +228,7 @@ ${currentStep <= totalSteps ?
     return `**${skill.id}**: ${skill.title}
    Goal: ${skill.goal}
    When to use: ${skill.whenToUse}
-   Steps: ${skill.steps.slice(0, 3).join(" → ")}${skill.steps.length > 3 ? ' → ...' : ''}`;
+   Steps: ${skill.steps.slice(0, 3).join(" → ")}${skill.steps.length > 3 ? " → ..." : ""}`;
   }).join("\n\n");
 
   return `${coachVoice}
@@ -265,22 +263,16 @@ function buildVoiceInstructions(coach?: CoachPersona): string {
   switch (coach.id) {
     case "rhonda":
       return `VOICE: You are bold, direct, and no-nonsense like a Military General. Use short, decisive sentences. Say "That's not helping" instead of "maybe that's not the best approach." Use phrases like "What's your next move?" "Get after it." "No excuses." Be supportive but tough.`;
-    
     case "chris":
       return `VOICE: You're introspective and deeply caring. Use thoughtful, reflective language. Ask probing questions about growth and meaning. Say things like "What's this teaching you?" "Growth comes through the hard moments." Be both kind and willing to give tough love when needed.`;
-    
     case "scotty":
       return `VOICE: Speak with humble warmth and Southern kindness. Use gentle, story-like language. Say things like "Hey friend," "Take it one step at a time," "Let's walk through this together." Be patient and nurturing.`;
-    
     case "terry":
       return `VOICE: Use dry, witty Bronx humor and practical wisdom. Be compassionate but ready with smart remarks. Say things like "Here's what actually works in the real world." "Let's cut through the noise." Blend heart with practical street smarts.`;
-    
     case "aj":
       return `VOICE: Be energetic, upbeat, and goal-driven. Use positive, strengths-focused language. Say things like "I love that you're leaning in!" "What strengths can you bring to this?" "You've got this!" Focus on capabilities and achievements.`;
-    
     case "jill":
       return `VOICE: Be warm, academic, and psychologically insightful. Use precise but caring language. Say things like "Let's explore what's happening here." "From a psychological perspective..." Blend evidence with empathy.`;
-    
     default:
       return "Maintain a professional, supportive coaching tone.";
   }
@@ -299,7 +291,7 @@ function detectMentionedSkills(userInput: string): string[] {
       mentionedSkills.push(skill.id);
       continue;
     }
-    // Check for partial matches
+    // Check for partial matches of 3-word phrases
     const titleWords = titleLower.split(" ");
     if (titleWords.length >= 3) {
       for (let i = 0; i <= titleWords.length - 3; i++) {
@@ -354,7 +346,7 @@ function getCoachingFirstSkillResponse(userInput: string, skillId: string, coach
   const showAll = /\b(all steps|full|detailed|details|everything|complete)\b/.test(userInput.toLowerCase());
   const stepsToShow = showAll ? skill.steps.length : Math.min(3, skill.steps.length);
 
-  // Voice-specific intros
+  // Voice-specific intro
   let intro = "";
   switch (resolvedCoach?.id) {
     case "rhonda":
@@ -382,7 +374,6 @@ function getCoachingFirstSkillResponse(userInput: string, skillId: string, coach
   let out = intro + "\n\n";
   out += `**${skill.title}** ${skill.goal}\n\n`;
   out += `**When to use:** ${skill.whenToUse}\n\n`;
-
   out += `**Steps to practice:**`;
   for (let i = 0; i < stepsToShow; i++) {
     out += `\n${i + 1}. ${skill.steps[i]}`;
@@ -401,7 +392,7 @@ function getCoachingFirstSkillResponse(userInput: string, skillId: string, coach
     }
   }
 
-  // Voice-specific call to action
+  // Voice-specific CTA
   let cta = "";
   switch (resolvedCoach?.id) {
     case "rhonda":
@@ -434,17 +425,17 @@ function getCoachingFirstSkillResponse(userInput: string, skillId: string, coach
 // HELPER FUNCTIONS
 // ============================================================================
 function needsSkillSuggestion(userInput: string, context?: CoachingContext): boolean {
-  if (context?.mode === 'active_coaching') return false; // Never suggest during active coaching
-  
+  if (context?.mode === "active_coaching") return false;
   const input = userInput.toLowerCase();
-  // Only suggest skills if user is clearly asking for help
-  return input.includes('help') || 
-         input.includes('what should i do') ||
-         input.includes('how can i') ||
-         input.includes('need guidance') ||
-         input.includes('stuck') ||
-         input.includes('overwhelmed') ||
-         (input.includes('anxious') && (input.includes('what') || input.includes('how')));
+  return (
+    input.includes("help") ||
+    input.includes("what should i do") ||
+    input.includes("how can i") ||
+    input.includes("need guidance") ||
+    input.includes("stuck") ||
+    input.includes("overwhelmed") ||
+    (input.includes("anxious") && (input.includes("what") || input.includes("how")))
+  );
 }
 
 function detectSkillsInText(text: string): string[] {
@@ -463,7 +454,10 @@ function detectSkillsInText(text: string): string[] {
     const words = title.split(/\s+/);
     for (let i = 0; i <= words.length - 3; i++) {
       const phrase = words.slice(i, i + 3).join(" ");
-      if (s.includes(phrase)) { found.add(skill.id); break; }
+      if (s.includes(phrase)) {
+        found.add(skill.id);
+        break;
+      }
     }
   }
   return [...found];
@@ -473,20 +467,9 @@ function goBagUrlForSkill(skillId: string): string {
   return `/go-bag/skills/${skillId}`;
 }
 
-function renderQuickActionsFooter(skillIds: string[]): string {
-  if (!skillIds.length) return "";
-  const lines = skillIds.map(id => {
-    const skill = MENTAL_ARMOR_SKILLS.find(s => s.id === id);
-    const title = skill?.title ?? id;
-    const url = goBagUrlForSkill(id);
-    return `• **${title}** — [Open in Go-Bag](${url}) · [Add to Practice Kit](action:add-to-practice-kit:${id})`;
-  });
-  return `\n\n---\n**Quick actions**\n${lines.join("\n")}`;
-}
-
 function getFallbackResponse(coach?: CoachPersona): string {
   const resolvedCoach = resolveCoachPersona(coach);
-  
+
   const fallbacks = [
     "That sounds really challenging. I'm here with you.",
     "I hear you—that's a lot to carry.",
@@ -494,31 +477,31 @@ function getFallbackResponse(coach?: CoachPersona): string {
   ];
 
   let response = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-  
+
   switch (resolvedCoach?.id) {
-    case "rhonda": 
-      response += " What's your next move?"; 
+    case "rhonda":
+      response += " What's your next move?";
       break;
-    case "scotty": 
-      response += " Let's take this one step at a time."; 
+    case "scotty":
+      response += " Let's take this one step at a time.";
       break;
-    case "terry":  
-      response += " Let's focus on what actually works here."; 
+    case "terry":
+      response += " Let's focus on what actually works here.";
       break;
-    case "aj":     
-      response += " You have strengths to build on."; 
+    case "aj":
+      response += " You have strengths to build on.";
       break;
-    case "chris":  
-      response += " What's this teaching you right now?"; 
+    case "chris":
+      response += " What's this teaching you right now?";
       break;
-    case "jill":   
-      response += " Let's explore what's happening here."; 
+    case "jill":
+      response += " Let's explore what's happening here.";
       break;
-    default:       
-      response += " What feels most important to address right now?"; 
+    default:
+      response += " What feels most important to address right now?";
       break;
   }
-  
+
   return response;
 }
 
@@ -577,18 +560,18 @@ export async function getImprovedCoachResponse(opts: {
     const skillId = mentionedSkills[0];
     const skillResponse = getCoachingFirstSkillResponse(userTurn, skillId, resolvedCoach);
 
-    const goBagLinks = [{
-      skillId,
-      title: MENTAL_ARMOR_SKILLS.find(s => s.id === skillId)!.title,
-      url: goBagUrlForSkill(skillId)
-    }];
-    const footer = renderQuickActionsFooter([skillId]);
+    const goBagLinks = [
+      {
+        skillId,
+        title: MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId)!.title,
+        url: goBagUrlForSkill(skillId),
+      },
+    ];
 
-    const final = (skillResponse + footer).trim();
-
+    const final = skillResponse.trim();
     return {
       text: final,
-      suggestedSkills: [], // Don't suggest additional skills when they asked about a specific one
+      suggestedSkills: [], // Don’t suggest additional skills when they asked about a specific one
       suggestionMethod: "curriculum",
       content: final,
       mentionedSkillIds: [skillId],
@@ -599,12 +582,11 @@ export async function getImprovedCoachResponse(opts: {
     };
   }
 
-  // 2) Build focused system prompt based on context
+  // 2) Build focused system prompt based on context and call model
   const sys = buildFocusedCoachingPrompt(resolvedCoach, context);
-  
   const messages = [
     { role: "system" as const, content: sys },
-    ...history.slice(-6).map(m => ({ role: m.role as "user" | "assistant", content: m.content })), // Limit context for focus
+    ...history.slice(-6).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })), // keep short
     { role: "user" as const, content: userTurn },
   ];
 
@@ -617,7 +599,7 @@ export async function getImprovedCoachResponse(opts: {
   }
 
   // In active coaching mode, don't suggest additional skills
-  if (context?.mode === 'active_coaching') {
+  if (context?.mode === "active_coaching") {
     return {
       text,
       suggestedSkills: [],
@@ -636,24 +618,21 @@ export async function getImprovedCoachResponse(opts: {
     }
   }
 
-  // Detect skills mentioned in the assistant's own reply
+  // Detect skills mentioned in the assistant's own reply (for UI actions)
   const mentionedInReply = detectSkillsInText(text);
 
-  // Build UI actions + footer
-  const goBagLinks = mentionedInReply.map(id => ({
+  const goBagLinks = mentionedInReply.map((id) => ({
     skillId: id,
-    title: MENTAL_ARMOR_SKILLS.find(s => s.id === id)?.title ?? id,
+    title: MENTAL_ARMOR_SKILLS.find((s) => s.id === id)?.title ?? id,
     url: goBagUrlForSkill(id),
   }));
-  const footer = renderQuickActionsFooter(mentionedInReply);
 
-  const finalText = (text + (footer || "")).trim();
-
+  // No markdown footer concatenation; return plain text and separate UI actions
   return {
-    text: finalText,
+    text,
     suggestedSkills,
     suggestionMethod: "curriculum",
-    content: finalText,
+    content: text,
     mentionedSkillIds: mentionedInReply,
     actions: {
       goBagLinks,
@@ -665,16 +644,17 @@ export async function getImprovedCoachResponse(opts: {
 // ============================================================================
 // WRAPPER used by RepairKit.tsx
 // ============================================================================
-export function createMentalArmorAI(config?: string | { coach?: CoachPersona; allowSuggestions?: boolean; context?: CoachingContext }) {
+export function createMentalArmorAI(
+  config?: string | { coach?: CoachPersona; allowSuggestions?: boolean; context?: CoachingContext },
+) {
   let coach: CoachPersona | undefined;
-  let allowSuggestions = true;
   let context: CoachingContext | undefined;
 
   if (typeof config === "string") {
     coach = { id: config, name: config };
   } else if (config) {
     coach = config.coach;
-    allowSuggestions = config.allowSuggestions ?? true;
+    // allowSuggestions is no longer needed here; suggestion logic is in needsSkillSuggestion(...)
     context = config.context;
   }
 
@@ -682,55 +662,55 @@ export function createMentalArmorAI(config?: string | { coach?: CoachPersona; al
     async send(userText: string, history: ChatMsg[]) {
       return getImprovedCoachResponse({ history, userTurn: userText, coach, context });
     },
+
     async generateResponse(...args: unknown[]) {
       let userText = "";
       let history: ChatMsg[] = [];
-      let passedContext: any = undefined;
+      let passedContext: Partial<CoachingContext> | undefined = undefined;
 
       if (args.length === 2) {
         [userText, history] = args as [string, ChatMsg[]];
       } else if (args.length === 3) {
-        [userText, passedContext, history] = args as [string, any, ChatMsg[]];
-        // Merge passed context with configured context
-        context = { ...context, ...passedContext };
+        [userText, passedContext, history] = args as [string, Partial<CoachingContext>, ChatMsg[]];
+        context = { ...(context ?? {}), ...(passedContext ?? {}) };
       }
 
       return getImprovedCoachResponse({ history, userTurn: userText, coach, context });
     },
-    
+
     // Method to update coaching context (for RepairKit state management)
     updateContext(newContext: Partial<CoachingContext>) {
-      context = { ...context, ...newContext };
+      context = { ...(context ?? {}), ...newContext };
     },
-    
+
     // Method to check if in active coaching
     isActiveCoaching() {
-      return context?.mode === 'active_coaching';
+      return context?.mode === "active_coaching";
     },
-    
+
     // Method to start coaching session
     startCoaching(skillId: string, skillTitle: string) {
       context = {
-        ...context,
-        mode: 'active_coaching',
+        ...(context ?? {}),
+        mode: "active_coaching",
         skillId,
         skillTitle,
         currentStep: 1,
         stepData: {},
-        totalSteps: MENTAL_ARMOR_SKILLS.find(s => s.id === skillId)?.steps.length || 1
+        totalSteps: MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId)?.steps.length || 1,
       };
     },
-    
+
     // Method to end coaching session
     endCoaching() {
       context = {
-        ...context,
-        mode: 'general_support',
+        ...(context ?? {}),
+        mode: "general_support",
         skillId: undefined,
         skillTitle: undefined,
         currentStep: undefined,
         stepData: undefined,
       };
-    }
+    },
   };
 }

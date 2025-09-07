@@ -12,6 +12,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sessionManager } from "@/utils/sessionManager";
 import PrivacyConsent from "@/components/PrivacyConsent";
+import { practiceKitUtils } from "@/utils/practiceKit";
+
 
 // Emergency Resources (unchanged)
 const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
@@ -174,6 +176,7 @@ export default function RepairKit() {
   const [expandedBioId, setExpandedBioId] = useState<string | null>(null);
   const [showPrivacyConsent, setShowPrivacyConsent] = useState(false);
   const [storageEnabled, setStorageEnabled] = useState(false);
+  const [lastSuggestedSkill, setLastSuggestedSkill] = useState<{ id: string; title: string } | null>(null);
 
   // NEW: Coaching Session State
   const [coachingSession, setCoachingSession] = useState<CoachingSession>({
@@ -404,6 +407,28 @@ export default function RepairKit() {
 
       const finalContent = aiResponse.text;
       const skillSuggestions = aiResponse.suggestedSkills || [];
+      const fromSuggestions =
+        (skillSuggestions[0]?.skillId && MENTAL_ARMOR_SKILLS.find(s => s.id === (skillSuggestions[0].skillId))) ||
+        null;
+
+      const mentionedIds = aiResponse.mentionedSkillIds ?? [];
+const fromMentioned =
+  (mentionedIds[0] && MENTAL_ARMOR_SKILLS.find(s => s.id === mentionedIds[0])) || null;
+
+const chosen = fromSuggestions || fromMentioned;
+setLastSuggestedSkill(chosen ? { id: chosen.id, title: chosen.title } : null);
+// If the user just affirmed and we have a last suggested/mentioned skill,
+// jump straight into active coaching for that skill.
+if (!coachingSession.isActive && lastSuggestedSkill) {
+  const affirmative = /^(yes|yep|sure|okay|ok|let'?s try it|lets try it|continue)\b/i.test(content);
+  if (affirmative) {
+    startCoachingSession(lastSuggestedSkill.id, lastSuggestedSkill.title);
+  }
+}
+
+
+
+
 
       // Enhance the final content with skill links
       const enhancedContent = enhanceMessageWithSkillLinks(finalContent);
@@ -474,14 +499,14 @@ export default function RepairKit() {
     setActiveTab("practice");
   }
 
-  const addToPracticeKit = (skillId: string) => {
-    const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId);
-    if (skill) {
-      startPracticeSession(skill);
-    } else {
-      alert("Couldn't find that skill.");
-    }
-  };
+  
+
+const addToPracticeKit = (skillId: string) => {
+  practiceKitUtils.addSkillToPracticeKit(skillId);
+  // Optional: a tiny non-blocking confirmation
+  window.dispatchEvent(new CustomEvent("practiceKitFlash", { detail: { skillId } }));
+};
+
 
   const completePracticeSession = (sessionId: string, notes?: string) => {
     setPracticeSessions((prev) =>
@@ -574,6 +599,7 @@ export default function RepairKit() {
     return response;
   };
 
+
   // Handle skill suggestion click
   const handleSkillSuggestionClick = (suggestion: SkillSuggestion) => {
     const skill = suggestion.skill || MENTAL_ARMOR_SKILLS.find(s => s.id === suggestion.skillId);
@@ -596,6 +622,7 @@ export default function RepairKit() {
 
     setMessages((prev) => [...prev, explanationMsg]);
     
+
     // Start coaching session for this skill
     startCoachingSession(skill.id, skill.title);
     startPracticeSession(skill);
@@ -986,6 +1013,8 @@ export default function RepairKit() {
                                     >
                                       {children}
                                     </a>
+
+
                                   );
                                 },
                                 // Optional: nicer list spacing inside bubbles
