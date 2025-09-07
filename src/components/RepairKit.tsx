@@ -4,12 +4,11 @@ import type { MentalArmorSkill, EmergencyResource } from "@/types/emergency";
 import { MENTAL_ARMOR_SKILLS } from "@/data/skills";
 import { TRAINERS, type Trainer } from "@/data/trainers";
 import { createMentalArmorAI } from "@/services/improved-openai-integration";
-import { type SkillSuggestion } from "@/services/enhanced-skill-suggestions";
 import PracticeSession from "@/components/PracticeSession";
 import { type PracticeSessionData } from "@/data/practices";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
+import { SkillSuggestion } from "@/services/enhanced-skill-suggestions";
 
 // Keep numbers distinct & always flag with country emoji
 const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
@@ -109,162 +108,58 @@ const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
 // CRITICAL Emergency Keywords - Enhanced Detection
 const EMERGENCY_KEYWORDS = [
   // Weapons/Methods - CRITICAL
-  "gun",
-  "weapon",
-  "knife",
-  "blade",
-  "pills",
-  "overdose",
-  "rope",
-  "noose",
-  "poison",
-  "jump",
-  "bridge",
-  "cliff",
-  "train",
-  "traffic",
-  "car crash",
-  "building",
-  "roof",
-  "hanging",
-  "suffocate",
-  "drown",
-  "gas",
+  "gun", "weapon", "knife", "blade", "pills", "overdose", "rope", "noose", "poison",
+  "jump", "bridge", "cliff", "train", "traffic", "car crash", "building", "roof",
+  "hanging", "suffocate", "drown", "gas",
 
   // Direct suicide language
-  "suicide",
-  "kill myself",
-  "end it all",
-  "take my life",
-  "end my life",
-  "want to die",
-  "wish I was dead",
-  "better off dead",
-  "not worth living",
+  "suicide", "kill myself", "end it all", "take my life", "end my life", "want to die",
+  "wish I was dead", "better off dead", "not worth living",
 
   // Self-harm with methods
-  "hurt myself",
-  "self-harm",
-  "cut myself",
-  "harm myself",
-  "cutting",
+  "hurt myself", "self-harm", "cut myself", "harm myself", "cutting",
 
   // Violence to others
-  "hurt someone",
-  "kill someone",
-  "harm others",
-  "shoot someone",
+  "hurt someone", "kill someone", "harm others", "shoot someone",
 
   // Planning/immediacy
-  "have a plan",
-  "going to do it",
-  "tonight",
-  "today",
-  "right now",
-  "final decision",
-  "made up my mind",
-  "goodbye",
-  "this is it",
+  "have a plan", "going to do it", "tonight", "today", "right now", "final decision",
+  "made up my mind", "goodbye", "this is it",
 ];
 
 const CRISIS_KEYWORDS = {
   CRITICAL: [
     // Weapons/methods
-    "gun",
-    "weapon",
-    "knife",
-    "blade",
-    "pills",
-    "overdose",
-    "rope",
-    "noose",
-    "poison",
-    "jump off",
-    "bridge",
-    "cliff",
-    "hanging",
-    "suffocate",
+    "gun", "weapon", "knife", "blade", "pills", "overdose", "rope", "noose", "poison",
+    "jump off", "bridge", "cliff", "hanging", "suffocate",
 
     // Immediate suicide language
-    "suicide",
-    "kill myself",
-    "end my life",
-    "take my life",
-    "want to die",
-    "end it all",
-    "better off dead",
-    "wish I was dead",
-    "not worth living",
-    "going to do it",
-    "have a plan",
-    "tonight",
-    "today",
-    "right now",
+    "suicide", "kill myself", "end my life", "take my life", "want to die", "end it all",
+    "better off dead", "wish I was dead", "not worth living", "going to do it", "have a plan",
+    "tonight", "today", "right now",
 
     // Violence
-    "hurt someone",
-    "kill someone",
-    "shoot someone",
-    "stab someone",
+    "hurt someone", "kill someone", "shoot someone", "stab someone",
   ],
   HIGH: [
-    "hopeless",
-    "worthless",
-    "no point living",
-    "give up",
-    "can't go on",
-    "meaningless",
-    "lost all hope",
-    "no way out",
-    "trapped forever",
-    "nothing left",
-    "burden to everyone",
-    "everyone better without me",
-    "hate my life",
-    "i hate my life",
-    "life sucks",
-    "done with everything",
-    "can’t do this anymore",
+    "hopeless", "worthless", "no point living", "give up", "can't go on", "meaningless",
+    "lost all hope", "no way out", "trapped forever", "nothing left", "burden to everyone",
+    "everyone better without me", "hate my life", "i hate my life", "life sucks",
+    "done with everything", "can't do this anymore",
   ],
   MEDIUM: [
     // Only truly overwhelming situations, not regular anxiety
-    "falling apart",
-    "breaking down",
-    "can't cope",
-    "losing it",
-    "at my limit",
-    "spiraling",
-    "out of control",
-    "mental breakdown",
-    "can't handle anymore",
-    "completely overwhelmed",
-    "drowning in",
+    "falling apart", "breaking down", "can't cope", "losing it", "at my limit",
+    "spiraling", "out of control", "mental breakdown", "can't handle anymore",
+    "completely overwhelmed", "drowning in",
   ],
   LOW: [
     // Regular stress/anxiety
-    "stressed",
-    "anxious",
-    "worried",
-    "tired",
-    "exhausted",
-    "struggling",
-    "difficult",
-    "tough time",
-    "frustrated",
-    "upset",
-    "sad",
-    "anxiety",
-    "nervous",
-    "tense",
-    "overwhelmed",
-    "high anxiety",
-    "panic",
-    "stress",
+    "stressed", "anxious", "worried", "tired", "exhausted", "struggling", "difficult",
+    "tough time", "frustrated", "upset", "sad", "anxiety", "nervous", "tense",
+    "overwhelmed", "high anxiety", "panic", "stress",
   ],
 };
-
-
-
 
 const aiService = createMentalArmorAI({ allowSuggestions: true });
 
@@ -316,11 +211,8 @@ export default function RepairKit() {
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showEmergencyAlert, setShowEmergencyAlert] = useState(false);
-  const [practiceSessions, setPracticeSessions] = useState<PracticeSession[]>(
-    []
-  );
-  const [selectedSkillForPractice, setSelectedSkillForPractice] =
-    useState<MentalArmorSkill | null>(null);
+  const [practiceSessions, setPracticeSessions] = useState<PracticeSession[]>([]);
+  const [selectedSkillForPractice, setSelectedSkillForPractice] = useState<MentalArmorSkill | null>(null);
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [expandedBioId, setExpandedBioId] = useState<string | null>(null);
 
@@ -367,7 +259,7 @@ export default function RepairKit() {
         setPracticeSessions((p) => [...p, session]);
         setSelectedSkillForPractice(found);
         setActiveTab("practice");
-        localStorage.removeItem("repair-kit-tab"); // ensure no leftover hint
+        localStorage.removeItem("repair-kit-tab");
       }
     } catch {
       // Ignore JSON errors
@@ -380,15 +272,11 @@ export default function RepairKit() {
   const detectDistressLevel = (text: string): Distress => {
     const t = text.toLowerCase();
 
-    if (
-      CRISIS_KEYWORDS.CRITICAL.some((k: string) => t.includes(k.toLowerCase()))
-    )
+    if (CRISIS_KEYWORDS.CRITICAL.some((k: string) => t.includes(k.toLowerCase())))
       return "critical";
     if (CRISIS_KEYWORDS.HIGH.some((k: string) => t.includes(k.toLowerCase())))
       return "high";
-    if (
-      CRISIS_KEYWORDS.MEDIUM.some((k: string) => t.includes(k.toLowerCase()))
-    )
+    if (CRISIS_KEYWORDS.MEDIUM.some((k: string) => t.includes(k.toLowerCase())))
       return "medium";
     if (CRISIS_KEYWORDS.LOW.some((k: string) => t.includes(k.toLowerCase())))
       return "low";
@@ -408,25 +296,12 @@ export default function RepairKit() {
 
     // Enhanced phrase detection for context
     const emergencyPhrases = [
-      "have a gun",
-      "got a weapon",
-      "holding a knife",
-      "pills ready",
-      "standing on",
-      "ready to jump",
-      "tied the rope",
-      "wrote goodbye",
-      "final decision",
-      "going to do it",
-      "tonight's the night",
-      "this is it",
-      "time to go",
-      "can't take another day",
+      "have a gun", "got a weapon", "holding a knife", "pills ready", "standing on",
+      "ready to jump", "tied the rope", "wrote goodbye", "final decision", "going to do it",
+      "tonight's the night", "this is it", "time to go", "can't take another day",
     ];
 
-    const hasEmergencyPhrase = emergencyPhrases.some((phrase) =>
-      t.includes(phrase)
-    );
+    const hasEmergencyPhrase = emergencyPhrases.some((phrase) => t.includes(phrase));
 
     return hasEmergency || hasCritical || hasEmergencyPhrase;
   };
@@ -450,7 +325,7 @@ export default function RepairKit() {
     }
   };
 
-  // -------- Country-separated contact blocks for AI messages
+  // Country-separated contact blocks for AI messages
   const CONTACT_BLOCKS = {
     US: `🇺🇸 United States:
 • Suicide & Crisis Lifeline: 988 (24/7)
@@ -470,9 +345,7 @@ export default function RepairKit() {
 • Emergency: 112 or 999`,
   };
 
-  function guessRegion():
-    | keyof typeof CONTACT_BLOCKS
-    | "ALL" {
+  function guessRegion(): keyof typeof CONTACT_BLOCKS | "ALL" {
     const lang = (navigator?.language || "").toLowerCase();
     if (lang.includes("en-gb") || lang.includes("-gb") || lang.includes("uk"))
       return "UK";
@@ -519,6 +392,26 @@ export default function RepairKit() {
     setActiveTab("chat");
   };
 
+  // Function to enhance message content with skill links
+  const enhanceMessageWithSkillLinks = (content: string): string => {
+    let enhancedContent = content;
+
+    // Find mentions of Mental Armor skills in the content
+    MENTAL_ARMOR_SKILLS.forEach((skill) => {
+      const skillTitleRegex = new RegExp(`\\b${skill.title}\\b`, 'gi');
+      
+      if (skillTitleRegex.test(enhancedContent)) {
+        // Replace skill mentions with markdown links
+        enhancedContent = enhancedContent.replace(
+          skillTitleRegex,
+          `[${skill.title}](/go-bag/skills/${skill.id})`
+        );
+      }
+    });
+
+    return enhancedContent;
+  };
+
   const handleSendMessage = async () => {
     const content = inputMessage.trim();
     if (!content || !selectedTrainer) return;
@@ -540,7 +433,7 @@ export default function RepairKit() {
     }
 
     try {
-      // Get AI response and skill suggestions from the SAME source
+      // Get AI response
       const history = messages.map((m) => ({
         role: m.type as "user" | "assistant",
         content: m.content,
@@ -548,7 +441,6 @@ export default function RepairKit() {
 
       const aiResponse = await aiService.send(content, history);
 
-      // Use the SAME skill suggestions for both AI response and cards
       let finalContent = aiResponse.text;
       const skillSuggestions = aiResponse.suggestedSkills || [];
 
@@ -558,19 +450,22 @@ export default function RepairKit() {
 
         // For low/medium distress, append skill suggestions to the response
         if ((distress === "low" || distress === "medium") && skillSuggestions.length > 0) {
-          const skillNames = skillSuggestions.map((s) => s.skill.title).join(", ");
+          const skillNames = skillSuggestions.map((s) => s.skill?.title || s.skillId).join(", ");
           finalContent += `\n\nConsider trying: ${skillNames}. Would you like to explore any of these?`;
         }
       }
 
+      // Enhance the final content with skill links
+      const enhancedContent = enhanceMessageWithSkillLinks(finalContent);
+
       const botMsg: ChatMessage = {
         id: crypto.randomUUID(),
         type: "assistant",
-        content: finalContent,
+        content: enhancedContent,
         timestamp: new Date(),
         trainerId: selectedTrainer.id,
-        suggestedSkills: skillSuggestions, // Use the SAME suggestions
-        suggestionMethod: aiResponse.suggestionMethod,
+        suggestedSkills: skillSuggestions,
+        suggestionMethod: aiResponse.suggestionMethod || "curriculum",
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -591,28 +486,27 @@ export default function RepairKit() {
   };
 
   function startPracticeSession(skill: MentalArmorSkill) {
-  const session: PracticeSession = {
-    id: crypto.randomUUID(),
-    skillId: skill.id,
-    skillTitle: skill.title,
-    startTime: new Date(),
-    completed: false,
-    trainerId: selectedTrainer?.id,
-  };
-  setPracticeSessions((p) => [...p, session]);
-  setSelectedSkillForPractice(skill);
-  setActiveTab("practice");
-}
-
-const addToPracticeKit = (skillId: string) => {
-  const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId);
-  if (skill) {
-    // Start a practice session as your "add" action
-    startPracticeSession(skill);
-  } else {
-    alert("Couldn't find that skill.");
+    const session: PracticeSession = {
+      id: crypto.randomUUID(),
+      skillId: skill.id,
+      skillTitle: skill.title,
+      startTime: new Date(),
+      completed: false,
+      trainerId: selectedTrainer?.id,
+    };
+    setPracticeSessions((p) => [...p, session]);
+    setSelectedSkillForPractice(skill);
+    setActiveTab("practice");
   }
-};
+
+  const addToPracticeKit = (skillId: string) => {
+    const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId);
+    if (skill) {
+      startPracticeSession(skill);
+    } else {
+      alert("Couldn't find that skill.");
+    }
+  };
 
   const completePracticeSession = (sessionId: string, notes?: string) => {
     setPracticeSessions((prev) =>
@@ -707,8 +601,11 @@ const addToPracticeKit = (skillId: string) => {
 
   // Handle skill suggestion click
   const handleSkillSuggestionClick = (suggestion: SkillSuggestion) => {
+    const skill = suggestion.skill || MENTAL_ARMOR_SKILLS.find(s => s.id === suggestion.skillId);
+    if (!skill) return;
+
     const explanationContent = getDirectSkillResponse(
-      suggestion.skillId,
+      skill.id,
       selectedTrainer || undefined
     );
 
@@ -723,12 +620,10 @@ const addToPracticeKit = (skillId: string) => {
     };
 
     setMessages((prev) => [...prev, explanationMsg]);
-
-    // Optionally start practice session
-    startPracticeSession(suggestion.skill);
+    startPracticeSession(skill);
   };
 
-  // Helper function to handle navigation to Go-Bag (properly typed)
+  // Helper function to handle navigation to Go-Bag
   const handleNavigateToGoBag = (skillId: string) => {
     if ("navigateToGoBag" in window && typeof window.navigateToGoBag === "function") {
       (window.navigateToGoBag as (skillId: string) => void)(skillId);
@@ -993,75 +888,74 @@ const addToPracticeKit = (skillId: string) => {
                               ? "bg-red-100 text-red-800 border border-red-300"
                               : "bg-gray-100 text-gray-900"
                           }`}
-                        >   {/* CHANGE THIS BLOCK */}
-        {m.type === "assistant" ? (
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              a: ({ href, children, ...props }) => {
-                const url = href || "";
+                        >
+                          {/* Enhanced message rendering with skill links */}
+                          {m.type === "assistant" ? (
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                a: ({ href, children, ...props }) => {
+                                  const url = href || "";
 
-                // 1) Custom in-app action: Add to Practice Kit
-                if (url.startsWith("action:add-to-practice-kit:")) {
-                  const skillId = url.split(":").pop()!;
-                  return (
-                    <button
-                      className="underline font-medium"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        addToPracticeKit(skillId);
-                      }}
-                    >
-                      {children}
-                    </button>
-                  );
-                }
+                                  // 1) Custom in-app action: Add to Practice Kit
+                                  if (url.startsWith("action:add-to-practice-kit:")) {
+                                    const skillId = url.split(":").pop()!;
+                                    return (
+                                      <button
+                                        className="underline font-medium text-blue-600 hover:text-blue-800"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          addToPracticeKit(skillId);
+                                        }}
+                                      >
+                                        {children}
+                                      </button>
+                                    );
+                                  }
 
-                // 2) Internal Go-Bag route, e.g. /go-bag/skills/flex-your-strengths
-                if (url.startsWith("/go-bag/skills/")) {
-                  const skillId = url.split("/").pop()!;
-                  return (
-                    <a
-                      href={url}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleNavigateToGoBag(skillId);
-                      }}
-                      className="underline font-medium"
-                      {...props}
-                    >
-                      {children}
-                    </a>
-                  );
-                }
+                                  // 2) Internal Go-Bag route, e.g. /go-bag/skills/flex-your-strengths
+                                  if (url.startsWith("/go-bag/skills/")) {
+                                    const skillId = url.split("/").pop()!;
+                                    return (
+                                      <a
+                                        href={url}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          handleNavigateToGoBag(skillId);
+                                        }}
+                                        className="underline font-medium text-blue-600 hover:text-blue-800"
+                                        {...props}
+                                      >
+                                        {children}
+                                      </a>
+                                    );
+                                  }
 
-                // 3) External links: open in new tab
-                return (
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline font-medium"
-                    {...props}
-                  >
-                    {children}
-                  </a>
-                );
-              },
-              // Optional: nicer list spacing inside bubbles
-              ul: ({ children }) => <ul className="list-disc pl-5 space-y-1">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1">{children}</ol>,
-              hr: () => <hr className="my-2 border-gray-300" />,
-            }}
-          >
-            {m.content}
-          </ReactMarkdown>
-        ) : (
-          // Keep user/system as plain text
-          <p className="text-sm whitespace-pre-wrap">{m.content}</p>
-        )}
-        {/* END CHANGE */}
-                          <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                                  // 3) External links: open in new tab
+                                  return (
+                                    <a
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="underline font-medium text-blue-600 hover:text-blue-800"
+                                      {...props}
+                                    >
+                                      {children}
+                                    </a>
+                                  );
+                                },
+                                // Optional: nicer list spacing inside bubbles
+                                ul: ({ children }) => <ul className="list-disc pl-5 space-y-1">{children}</ul>,
+                                ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1">{children}</ol>,
+                                hr: () => <hr className="my-2 border-gray-300" />,
+                              }}
+                            >
+                              {m.content}
+                            </ReactMarkdown>
+                          ) : (
+                            // Keep user/system as plain text
+                            <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                          )}
                           <p className={`text-xs mt-1 ${m.type === "user" ? "text-blue-200" : "text-gray-500"}`}>
                             {m.timestamp.toLocaleTimeString()}
                           </p>
@@ -1079,41 +973,46 @@ const addToPracticeKit = (skillId: string) => {
                             </span>
                           </p>
                           <div className="space-y-2">
-                            {m.suggestedSkills.map((suggestion) => (
-                              <div
-                                key={suggestion.skillId}
-                                className="bg-blue-50 border border-blue-200 rounded-lg p-3"
-                              >
-                                {/* Skill Title and Confidence */}
-                                <div className="flex items-center justify-between mb-2">
-                                  <h4 className="font-medium text-blue-900">{suggestion.skill.title}</h4>
-                                  <div className="text-xs text-blue-600">
-                                    {suggestion.confidence > 0.7 ? "🎯" : suggestion.confidence > 0.5 ? "👍" : "💭"}
+                            {m.suggestedSkills.map((suggestion: SkillSuggestion) => {
+                              const skill = suggestion.skill || MENTAL_ARMOR_SKILLS.find(s => s.id === suggestion.skillId);
+                              if (!skill) return null;
+                              
+                              return (
+                                <div
+                                  key={suggestion.skillId || skill.id}
+                                  className="bg-blue-50 border border-blue-200 rounded-lg p-3"
+                                >
+                                  {/* Skill Title and Confidence */}
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h4 className="font-medium text-blue-900">{skill.title}</h4>
+                                    <div className="text-xs text-blue-600">
+                                      {(suggestion.confidence || 0.8) > 0.7 ? "🎯" : (suggestion.confidence || 0.8) > 0.5 ? "👍" : "💭"}
+                                    </div>
+                                  </div>
+
+                                  {/* Brief Description */}
+                                  <p className="text-sm text-blue-800 mb-3 line-clamp-2">
+                                    {suggestion.curriculumQuote || skill.goal}
+                                  </p>
+
+                                  {/* Action Buttons */}
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleSkillSuggestionClick(suggestion)}
+                                      className="flex-1 px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors"
+                                    >
+                                      Learn & Practice
+                                    </button>
+                                    <button
+                                      onClick={() => handleNavigateToGoBag(skill.id)}
+                                      className="px-3 py-2 border border-blue-600 text-blue-600 rounded text-sm font-medium hover:bg-blue-50 transition-colors"
+                                    >
+                                      Go to Skill →
+                                    </button>
                                   </div>
                                 </div>
-
-                                {/* Brief Description */}
-                                <p className="text-sm text-blue-800 mb-3 line-clamp-2">
-                                  {suggestion.curriculumQuote || suggestion.skill.goal}
-                                </p>
-
-                                {/* Action Buttons */}
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => handleSkillSuggestionClick(suggestion)}
-                                    className="flex-1 px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors"
-                                  >
-                                    Learn & Practice
-                                  </button>
-                                  <button
-                                    onClick={() => handleNavigateToGoBag(suggestion.skillId)}
-                                    className="px-3 py-2 border border-blue-600 text-blue-600 rounded text-sm font-medium hover:bg-blue-50 transition-colors"
-                                  >
-                                    Go to Skill →
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
