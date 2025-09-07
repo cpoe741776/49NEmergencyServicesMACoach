@@ -46,25 +46,6 @@ export type CoachResponse = {
 };
 
 // ---- Refusal detection + supportive baseline ----
-function isLikelyRefusal(text: string): boolean {
-  const t = text.toLowerCase();
-  return [
-    "i'm unable to provide",
-    "i can’t help with that",
-    "i can't help with that",
-    "i can't provide the help you need",
-    "i can’t provide the help you need",
-    "i cannot assist with",
-  ].some((p) => t.includes(p));
-}
-
-function composeSupportiveFirstTurn(_userTurn: string, coach?: CoachPersona): string {
-  const coachTag = coach?.name ? ` I’m ${coach.name}.` : "";
-  const lead = `I’m really sorry you’re feeling this way.${coachTag} You’re not alone, and I’m here with you.`;
-  const ask = "What’s making today feel especially heavy?";
-  const nudge = "If you want a Mental Armor™ skill, say the word and I’ll share one with exact steps.";
-  return `${lead} ${ask} ${nudge}`;
-}
 
 // ---- System prompt (curriculum-first) ----
 function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
@@ -98,7 +79,6 @@ function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
 CONVERSATIONAL BASELINE (do not violate safety, do not invent skills):
 - If the user expresses distress WITHOUT explicit self-harm intent, do NOT refuse.
 - Start with a brief, human validation (1–2 short sentences), then ask ONE short, open question.
-- Only present a skill inline when the user explicitly asks for a skill (e.g., “is there a skill to help?”). When you do, use the exact curriculum format (GOAL, WHEN TO USE, STEPS) and keep it concise.
 
 CRITICAL INSTRUCTION: When users ask about specific Mental Armor™ skills, respond IMMEDIATELY with the exact curriculum content. Do NOT give general explanations about the program first.
 
@@ -110,11 +90,9 @@ RESPONSE FORMAT FOR SKILL QUESTIONS:
 
 STRICT RULES:
 - Use ONLY exact language from Mental Armor™ curriculum
-- NEVER create new content or paraphrase
+- NEVER create new content
 - When a skill is mentioned, give its specific content immediately
-- Do not explain "the program" - give the specific skill details
-- Keep responses focused on the specific skill requested
-- Do NOT suggest specific skills - the system handles skill suggestions automatically
+- Keep responses focused on the skills
 
 MENTAL ARMOR™ SKILL CATALOG (USE EXACT LANGUAGE ONLY):
 ${skillCatalog}
@@ -159,8 +137,7 @@ GENERAL COACHING APPROACH:
 - Provide supportive guidance using only curriculum concepts
 - Keep responses focused on understanding and practical application
 - Use exact curriculum language for all skill references
-- The system will automatically suggest appropriate skills separately
-- Stay within the Mental Armor™ framework at all times`;
+- When suggesting strategies, stay within the Mental Armor™ framework at all times`;
 }
 
 // ---- Direct skill content delivery ----
@@ -299,27 +276,6 @@ function detectMentionedSkills(userInput: string): string[] {
 }
 
 // ---- Validate curriculum references ----
-function validateCurriculumLanguage(text: string): string {
-  const validSkillTitles = MENTAL_ARMOR_SKILLS.map((s) => s.title.toLowerCase());
-  const lines = text.split("\n");
-
-  return lines
-    .map((line: string) => {
-      const lowerLine = line.toLowerCase();
-      const mentionsInvalidSkill =
-        lowerLine.includes("skill") && !validSkillTitles.some((title) => lowerLine.includes(title));
-
-      if (mentionsInvalidSkill) {
-        return line
-          .replace(/try the .* skill/gi, "consider using Mental Armor™ techniques")
-          .replace(/use .* skill/gi, "apply your training")
-          .replace(/practice .* skill/gi, "practice your techniques");
-      }
-
-      return line;
-    })
-    .join("\n");
-}
 
 // ---- Fallback response ----
 function getFallbackResponse(coach?: CoachPersona): string {
@@ -400,10 +356,6 @@ export async function getImprovedCoachResponse(opts: {
   let text = "";
   try {
     text = await callOpenAI(messages);
-    if (isLikelyRefusal(text)) {
-      text = composeSupportiveFirstTurn(userTurn, coach);
-    }
-    text = validateCurriculumLanguage(text);
   } catch (error) {
     console.warn("OpenAI call failed:", error);
     text = getFallbackResponse(coach);
