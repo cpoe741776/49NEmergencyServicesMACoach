@@ -8,7 +8,8 @@ import PracticeSession from "@/components/PracticeSession";
 import { type PracticeSessionData } from "@/data/practices";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { SkillSuggestion } from "@/services/enhanced-skill-suggestions";
+import { sessionManager } from "@/utils/sessionManager";
+import PrivacyConsent from "@/components/PrivacyConsent";
 
 // Keep numbers distinct & always flag with country emoji
 const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
@@ -166,6 +167,13 @@ const aiService = createMentalArmorAI({ allowSuggestions: true });
 type ChatKind = "user" | "assistant" | "system";
 type Distress = "none" | "low" | "medium" | "high" | "critical";
 
+interface SkillSuggestion {
+  skillId: string;
+  skill?: MentalArmorSkill;
+  confidence?: number;
+  curriculumQuote?: string;
+}
+
 interface ChatMessage {
   id: string;
   type: ChatKind;
@@ -215,6 +223,8 @@ export default function RepairKit() {
   const [selectedSkillForPractice, setSelectedSkillForPractice] = useState<MentalArmorSkill | null>(null);
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [expandedBioId, setExpandedBioId] = useState<string | null>(null);
+  const [showPrivacyConsent, setShowPrivacyConsent] = useState(false);
+  const [storageEnabled, setStorageEnabled] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -224,20 +234,60 @@ export default function RepairKit() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Privacy consent and storage initialization
+  useEffect(() => {
+    const hasConsent = localStorage.getItem('mentalArmor-privacy-consent');
+    if (hasConsent === null) {
+      setShowPrivacyConsent(true);
+    } else {
+      setStorageEnabled(hasConsent === 'true');
+      if (hasConsent === 'true') {
+        sessionManager.init();
+      }
+    }
+  }, []);
+
   // Welcome message when trainer selected
   useEffect(() => {
-    if (selectedTrainer && messages.length === 0) {
-      setMessages([
-        {
-          id: crypto.randomUUID(),
-          type: "assistant",
-          content: getTrainerWelcomeMessage(selectedTrainer),
-          timestamp: new Date(),
-          trainerId: selectedTrainer.id,
-        },
-      ]);
+    if (selectedTrainer) {
+      if (storageEnabled) {
+        // Load saved chat session
+        const savedMessages = sessionManager.getChatSession(selectedTrainer.id);
+        if (savedMessages.length > 0) {
+          setMessages(savedMessages);
+        } else {
+          // Start with welcome message
+          setMessages([
+            {
+              id: crypto.randomUUID(),
+              type: "assistant",
+              content: getTrainerWelcomeMessage(selectedTrainer),
+              timestamp: new Date(),
+              trainerId: selectedTrainer.id,
+            },
+          ]);
+        }
+      } else {
+        // Just welcome message without storage
+        setMessages([
+          {
+            id: crypto.randomUUID(),
+            type: "assistant",
+            content: getTrainerWelcomeMessage(selectedTrainer),
+            timestamp: new Date(),
+            trainerId: selectedTrainer.id,
+          },
+        ]);
+      }
     }
-  }, [selectedTrainer, messages.length]);
+  }, [selectedTrainer, storageEnabled]);
+
+  // Auto-save chat messages when they change
+  useEffect(() => {
+    if (selectedTrainer && messages.length > 0 && storageEnabled) {
+      sessionManager.saveChatSession(selectedTrainer.id, messages);
+    }
+  }, [messages, selectedTrainer, storageEnabled]);
 
   // Handle practice session handoff
   useEffect(() => {
@@ -345,22 +395,25 @@ export default function RepairKit() {
 • Emergency: 112 or 999`,
   };
 
-  
+  function guessRegion(): keyof typeof CONTACT_BLOCKS | "ALL" {
+    const lang = (navigator?.language || "").toLowerCase();
+    if (lang.includes("en-gb") || lang.includes("-gb") || lang.includes("uk"))
+      return "UK";
+    if (lang.includes("en-ie") || lang.includes("-ie")) return "IE";
+    if (lang.includes("en-ca") || lang.includes("-ca") || lang.endsWith("-ca"))
+      return "CA";
+    if (lang.includes("en-us") || lang.includes("-us")) return "US";
+    return "ALL";
+  }
 
-  // DELETE this function entirely (to avoid unused warnings)
-// function guessRegion() { ... }
-
-// Replace formatContacts with:
-function formatContacts(): string {
-  // Always show all regions in a fixed order
-  return [
-    CONTACT_BLOCKS.US,
-    CONTACT_BLOCKS.CA,
-    CONTACT_BLOCKS.UK,
-    CONTACT_BLOCKS.IE,
-  ].join("\n\n");
-}
-
+  function formatContacts(): string {
+    const region = guessRegion();
+    if (region === "ALL") {
+      return `${CONTACT_BLOCKS.US}\n\n${CONTACT_BLOCKS.CA}\n\n${CONTACT_BLOCKS.UK}\n\n${CONTACT_BLOCKS.IE}`;
+    }
+    const order = [region, ...(["US", "CA", "UK", "IE"] as const).filter((r) => r !== region)];
+    return order.map((r) => CONTACT_BLOCKS[r]).join("\n\n");
+  }
 
   const getDistressResponse = (
     trainer: Trainer,
@@ -631,8 +684,42 @@ function formatContacts(): string {
     }
   };
 
+  // Export and data management functions
+  const handleExportChat = () => {
+    if (!selectedTrainer) return;
+    sessionManager.downloadChatAsJSON(selectedTrainer.id, selectedTrainer.name);
+  };
+
+  const handlePrintChat = () => {
+    if (!selectedTrainer) return;
+    sessionManager.printChatSession(selectedTrainer.id, selectedTrainer.name);
+  };
+
+  const handleClearData = () => {
+    if (confirm('Are you sure you want to delete all saved chat data? This cannot be undone.')) {
+      sessionManager.clearAllData();
+      setMessages([]);
+      setStorageEnabled(false);
+      alert('All data has been cleared.');
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Privacy Consent Modal */}
+      {showPrivacyConsent && (
+        <PrivacyConsent 
+          onConsentGiven={() => {
+            setShowPrivacyConsent(false);
+            const hasConsent = localStorage.getItem('mentalArmor-privacy-consent') === 'true';
+            setStorageEnabled(hasConsent);
+            if (hasConsent) {
+              sessionManager.init();
+            }
+          }} 
+        />
+      )}
+
       {/* Disclaimer Modal */}
       {!disclaimerAccepted && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -682,7 +769,7 @@ function formatContacts(): string {
                 Being resilient includes reaching out for help when you need it most.
               </p>
               <div className="space-y-3">
-                {DEFAULT_EMERGENCY_RESOURCES.map((r: EmergencyResource, i: number) => (
+                {DEFAULT_EMERGENCY_RESOURCES.slice(0, 4).map((r: EmergencyResource, i: number) => (
                   <div key={i} className="bg-white/80 rounded-lg p-3 border border-blue-200">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -865,12 +952,32 @@ function formatContacts(): string {
                     <h4 className="font-semibold text-gray-900">{selectedTrainer.name}</h4>
                     <p className="text-sm text-gray-600">Mental Armor™ Coach</p>
                   </div>
-                  <button
-                    onClick={() => setActiveTab("coaches")}
-                    className="ml-auto text-sm text-brand-primary hover:underline"
-                  >
-                    Change Coach
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    {storageEnabled && messages.length > 1 && (
+                      <>
+                        <button
+                          onClick={handlePrintChat}
+                          className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                          title="Print chat session"
+                        >
+                          🖨️ Print
+                        </button>
+                        <button
+                          onClick={handleExportChat}
+                          className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                          title="Download chat as JSON"
+                        >
+                          📁 Export
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => setActiveTab("coaches")}
+                      className="text-sm text-brand-primary hover:underline"
+                    >
+                      Change Coach
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1246,6 +1353,41 @@ function formatContacts(): string {
           </div>
         )}
       </div>
+
+      {/* Data Management Footer */}
+      {storageEnabled && (
+        <div className="border-t bg-gray-50 p-3 text-xs text-gray-600">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1">
+                <span className="text-green-600">✓</span>
+                Storage enabled: {sessionManager.getStorageSize()}
+              </span>
+              <span>Auto-expires in 7 days</span>
+            </div>
+            <button
+              onClick={handleClearData}
+              className="text-red-600 hover:underline font-medium"
+            >
+              Clear All Data
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!storageEnabled && (
+        <div className="border-t bg-amber-50 p-3 text-xs text-amber-700">
+          <div className="flex items-center justify-between">
+            <span>Chat history is not being saved. Enable storage in settings for a better experience.</span>
+            <button
+              onClick={() => setShowPrivacyConsent(true)}
+              className="text-brand-primary hover:underline font-medium"
+            >
+              Enable Storage
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
