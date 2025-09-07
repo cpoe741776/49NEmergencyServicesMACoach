@@ -1,10 +1,42 @@
 // src/utils/sessionManager.ts
 import type { ChatMessage } from "@/types/emergency";
-import type { Trainer } from "@/data/trainers";
+
+interface SkillSuggestion {
+  skillId: string;
+  skill?: {
+    id: string;
+    title: string;
+    goal: string;
+  };
+  confidence?: number;
+  curriculumQuote?: string;
+}
+
+interface PracticeSession {
+  id: string;
+  skillId: string;
+  skillTitle: string;
+  startTime: Date;
+  endTime?: Date;
+  notes?: string;
+  completed: boolean;
+  trainerId?: string;
+}
+
+interface StoredChatMessage {
+  id: string;
+  type: "user" | "assistant" | "system";
+  content: string;
+  timestamp: string; // Always stored as string in localStorage
+  isEmergencyAlert?: boolean;
+  trainerId?: string;
+  suggestedSkills?: SkillSuggestion[];
+  suggestionMethod?: "curriculum" | "ai-validated" | "fallback";
+}
 
 interface SessionData {
-  chatSessions: { [trainerId: string]: ChatMessage[] };
-  practiceSessions: any[];
+  chatSessions: { [trainerId: string]: StoredChatMessage[] };
+  practiceSessions: PracticeSession[];
   selectedTrainer: string | null;
   timestamp: number;
   version: string;
@@ -64,11 +96,18 @@ class SessionManager {
 
     try {
       const existingData = this.getSessionData();
+      
+      // Convert ChatMessage[] to StoredChatMessage[]
+      const storedMessages: StoredChatMessage[] = messages.map(msg => ({
+        ...msg,
+        timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp
+      }));
+
       const newData: SessionData = {
         ...existingData,
         chatSessions: {
           ...existingData.chatSessions,
-          [trainerId]: messages
+          [trainerId]: storedMessages
         },
         timestamp: Date.now(),
         version: this.VERSION
@@ -87,7 +126,13 @@ class SessionManager {
 
     try {
       const data = this.getSessionData();
-      return data.chatSessions[trainerId] || [];
+      const storedMessages = data.chatSessions[trainerId] || [];
+      
+      // Convert StoredChatMessage[] back to ChatMessage[]
+      return storedMessages.map(msg => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      }));
     } catch (error) {
       console.warn('Failed to load chat session:', error);
       return [];
@@ -131,7 +176,7 @@ class SessionManager {
       exportDate: new Date().toISOString(),
       trainerName,
       chatHistory: messages.map(msg => ({
-        timestamp: msg.timestamp.toISOString(),
+        timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : new Date(msg.timestamp).toISOString(),
         sender: msg.type === 'user' ? 'You' : trainerName,
         message: msg.content
       })),
@@ -282,10 +327,10 @@ class SessionManager {
   // Data management
   cleanExpiredSessions(): void {
     try {
-      const data = this.getSessionData();
-      // If data is expired, it will be automatically cleared by getSessionData()
-    } catch (error) {
-      console.warn('Failed to clean expired sessions:', error);
+      // Check if session data exists and is valid (getSessionData handles expiration)
+      this.getSessionData();
+    } catch {
+      console.warn('Failed to clean expired sessions');
     }
   }
 
@@ -295,8 +340,8 @@ class SessionManager {
       localStorage.removeItem('mentalArmor-privacy-consent');
       localStorage.removeItem('mentalArmor-consent-date');
       console.log('All Mental Armor data cleared');
-    } catch (error) {
-      console.warn('Failed to clear data:', error);
+    } catch {
+      console.warn('Failed to clear data');
     }
   }
 
@@ -308,7 +353,7 @@ class SessionManager {
       
       const bytes = new TextEncoder().encode(data).length;
       return bytes < 1024 ? `${bytes} bytes` : `${(bytes / 1024).toFixed(1)} KB`;
-    } catch (error) {
+    } catch {
       return 'Unknown';
     }
   }
