@@ -7,6 +7,9 @@ import { createMentalArmorAI } from "@/services/improved-openai-integration";
 import { type SkillSuggestion } from "@/services/enhanced-skill-suggestions";
 import PracticeSession from "@/components/PracticeSession";
 import { type PracticeSessionData } from "@/data/practices";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 
 // Keep numbers distinct & always flag with country emoji
 const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
@@ -259,6 +262,9 @@ const CRISIS_KEYWORDS = {
     "stress",
   ],
 };
+
+
+
 
 const aiService = createMentalArmorAI({ allowSuggestions: true });
 
@@ -584,19 +590,29 @@ export default function RepairKit() {
     }
   };
 
-  const startPracticeSession = (skill: MentalArmorSkill) => {
-    const session: PracticeSession = {
-      id: crypto.randomUUID(),
-      skillId: skill.id,
-      skillTitle: skill.title,
-      startTime: new Date(),
-      completed: false,
-      trainerId: selectedTrainer?.id,
-    };
-    setPracticeSessions((p) => [...p, session]);
-    setSelectedSkillForPractice(skill);
-    setActiveTab("practice");
+  function startPracticeSession(skill: MentalArmorSkill) {
+  const session: PracticeSession = {
+    id: crypto.randomUUID(),
+    skillId: skill.id,
+    skillTitle: skill.title,
+    startTime: new Date(),
+    completed: false,
+    trainerId: selectedTrainer?.id,
   };
+  setPracticeSessions((p) => [...p, session]);
+  setSelectedSkillForPractice(skill);
+  setActiveTab("practice");
+}
+
+const addToPracticeKit = (skillId: string) => {
+  const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId);
+  if (skill) {
+    // Start a practice session as your "add" action
+    startPracticeSession(skill);
+  } else {
+    alert("Couldn't find that skill.");
+  }
+};
 
   const completePracticeSession = (sessionId: string, notes?: string) => {
     setPracticeSessions((prev) =>
@@ -977,7 +993,74 @@ export default function RepairKit() {
                               ? "bg-red-100 text-red-800 border border-red-300"
                               : "bg-gray-100 text-gray-900"
                           }`}
-                        >
+                        >   {/* CHANGE THIS BLOCK */}
+        {m.type === "assistant" ? (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ href, children, ...props }) => {
+                const url = href || "";
+
+                // 1) Custom in-app action: Add to Practice Kit
+                if (url.startsWith("action:add-to-practice-kit:")) {
+                  const skillId = url.split(":").pop()!;
+                  return (
+                    <button
+                      className="underline font-medium"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        addToPracticeKit(skillId);
+                      }}
+                    >
+                      {children}
+                    </button>
+                  );
+                }
+
+                // 2) Internal Go-Bag route, e.g. /go-bag/skills/flex-your-strengths
+                if (url.startsWith("/go-bag/skills/")) {
+                  const skillId = url.split("/").pop()!;
+                  return (
+                    <a
+                      href={url}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleNavigateToGoBag(skillId);
+                      }}
+                      className="underline font-medium"
+                      {...props}
+                    >
+                      {children}
+                    </a>
+                  );
+                }
+
+                // 3) External links: open in new tab
+                return (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline font-medium"
+                    {...props}
+                  >
+                    {children}
+                  </a>
+                );
+              },
+              // Optional: nicer list spacing inside bubbles
+              ul: ({ children }) => <ul className="list-disc pl-5 space-y-1">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1">{children}</ol>,
+              hr: () => <hr className="my-2 border-gray-300" />,
+            }}
+          >
+            {m.content}
+          </ReactMarkdown>
+        ) : (
+          // Keep user/system as plain text
+          <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+        )}
+        {/* END CHANGE */}
                           <p className="text-sm whitespace-pre-wrap">{m.content}</p>
                           <p className={`text-xs mt-1 ${m.type === "user" ? "text-blue-200" : "text-gray-500"}`}>
                             {m.timestamp.toLocaleTimeString()}
