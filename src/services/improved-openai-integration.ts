@@ -1,8 +1,8 @@
 // src/services/improved-openai-integration.ts
-// src/services/improved-openai-integration.ts
 import { MENTAL_ARMOR_SKILLS } from "@/data/skills";
 import { EnhancedSkillSuggestions, type SkillSuggestion } from "./enhanced-skill-suggestions";
-import { getTrainerById, TRAINERS } from "@/data/trainers"; // ⬅️ NEW
+import { getTrainerById, TRAINERS } from "@/data/trainers";
+
 const MODEL = import.meta.env.VITE_OPENAI_MODEL || "gpt-4o-mini";
 const FUNCTION_URL = "/.netlify/functions/openai-chat";
 
@@ -23,7 +23,6 @@ async function callOpenAI(messages: Array<{ role: "system" | "user" | "assistant
     throw new Error(`Function error ${res.status}: ${text || res.statusText}`);
   }
   const data = await res.json();
-  // Support either { text } from your function or raw OpenAI shape
   return data.text || data.choices?.[0]?.message?.content || "";
 }
 
@@ -33,10 +32,10 @@ export type ChatMsg = {
 };
 
 export type CoachPersona = {
-  id?: string;          // ⬅️ NEW (trainer id like "rhonda", "scotty", etc.)
+  id?: string;          // trainer id like "rhonda", "scotty", etc.
   name: string;
   style?: string;
-  voice?: string;       // ⬅️ NEW (resolved from trainers.ts)
+  voice?: string;       // resolved from trainers.ts
   guardrails?: string[];
 };
 
@@ -46,44 +45,33 @@ export type CoachResponse = {
   suggestionMethod: "curriculum" | "ai-validated" | "fallback";
   content?: string;
   requiresEscalation?: boolean;
-  escalationReason?: "confession-serious-crime" | "imminent-threat"; //
+  escalationReason?: "confession-serious-crime" | "imminent-threat";
+  mentionedSkillIds?: string[];
+  actions?: {
+    goBagLinks: { skillId: string; title: string; url: string }[];
+    practiceKitAdd: string[];
+  };
 };
 
 // ============================================================================
 // IMMINENT / FUTURE HARM INTENT HANDLING
 // ============================================================================
-
-/**
- * Detect statements indicating intent or plans to harm people/animals
- * or commit serious crimes in the future (or imminently).
- * Keep patterns focused to reduce false positives.
- */
 function detectImminentThreatIntent(text: string): boolean {
   const s = text.toLowerCase();
-
   if (s.length < 6) return false;
 
   const patterns: RegExp[] = [
-    // Intent to physically harm / kill a person
     /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(kill|murder|stab|shoot|hurt|harm|attack|assault)\b/,
     /\b(i|we)\s+(want|wanna|wish)\s+to\s+(kill|murder|stab|shoot|hurt|harm|attack|assault)\b/,
-    // Harm directed at a specific target
     /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(hurt|harm|kill|beat)\b.*\b(him|her|them|someone|person|man|woman|boy|girl)\b/,
-    // Violent/serious crime plans
     /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(rob|mug|carjack|home-?invade|kidnap)\b/,
-    // Arson/vandalism threats
     /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(burn|set\s+fire|torch|bomb)\b/,
-    // Animal cruelty intent
     /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(kill|hurt|harm|torture|poison)\b.*\b(dog|cat|animal|pet)\b/,
   ];
 
   return patterns.some((re) => re.test(s));
 }
 
-/**
- * Stock response for threats/intent of harm or serious crime.
- * No coaching on how to proceed; clear emergency redirection.
- */
 function imminentThreatResponse(): string {
   return [
     "I can’t help with plans or intentions to harm anyone or commit a crime.",
@@ -95,47 +83,25 @@ function imminentThreatResponse(): string {
   ].join("\n");
 }
 
-
 // ============================================================================
 // SERIOUS CRIME ADMISSION HANDLING
 // ============================================================================
-
-/**
- * Detect explicit admissions of having COMMITTED a serious violent/sexual crime
- * or animal cruelty. This intentionally avoids "plans/intent" (future) and
- * focuses on past/present-tense confessions (e.g., "I killed", "I raped").
- * Keep patterns narrow to reduce false positives.
- */
 function detectSeriousCrimeAdmission(text: string): boolean {
   const s = text.toLowerCase();
-
-  // Quick exit on very short texts
   if (s.length < 6) return false;
 
-  // Past/present-tense verbs commonly used in confessions + key nouns
-  // We pair verbs + objects to lower false positives.
   const patterns: RegExp[] = [
-    // homicide / murder
     /\b(i|we)\s+(have\s+)?(killed|murdered|shot|stabbed|strangled)\b.*\b(person|someone|him|her|them|man|woman|boy|girl)\b/,
-    // sexual assault (use careful phrasing to avoid accidental matches)
     /\b(i|we)\s+(have\s+)?(raped|assaulted)\b.*\b(person|someone|him|her|them|man|woman|boy|girl)\b/,
-    // robbery/violent theft
     /\b(i|we)\s+(have\s+)?(robbed|mugged|carjacked|home-?invaded)\b/,
-    // severe animal cruelty
     /\b(i|we)\s+(have\s+)?(killed|tortured|hurt|beat|poisoned)\b.*\b(dog|cat|animal|pet)\b/,
-    // arson causing harm
     /\b(i|we)\s+(have\s+)?(set\s+fire|committed\s+arson)\b.*\b(house|home|building|car|property)\b/,
-    // child abuse (past/present admissions)
     /\b(i|we)\s+(have\s+)?(abused|hurt|molested|assaulted)\b.*\b(child|kid|minor)\b/,
   ];
 
   return patterns.some(re => re.test(s));
 }
 
-/**
- * Stock emergency response. No details, no coaching; clear boundaries.
- * Includes international emergency guidance (112/999/911) and legal counsel.
- */
 function seriousCrimeResponse(): string {
   return [
     "I can’t engage on confessions of criminal acts.",
@@ -149,58 +115,35 @@ function seriousCrimeResponse(): string {
   ].join("\n");
 }
 
-
+// ============================================================================
+// VOICE / STYLE HELPERS
+// ============================================================================
 function deriveStyleChecklist(voice?: string): string[] {
   const v = (voice || "").toLowerCase();
-
   const rules: string[] = [];
 
-  // Tone & cadence
   if (v.includes("direct") || v.includes("military") || v.includes("general")) {
-    rules.push(
-      "Use short, direct sentences.",
-      "Prefer active voice and imperative verbs.",
-      "Avoid hedging (no 'maybe', 'might', 'perhaps' unless necessary)."
-    );
+    rules.push("Use short, direct sentences.", "Prefer active voice and imperative verbs.", "Avoid hedging (no 'maybe', 'might', 'perhaps' unless necessary).");
   }
   if (v.includes("warm") || v.includes("kind") || v.includes("support") || v.includes("empath")) {
-    rules.push(
-      "Lead with brief empathy before guidance.",
-      "Use approachable, encouraging phrasing."
-    );
+    rules.push("Lead with brief empathy before guidance.", "Use approachable, encouraging phrasing.");
   }
   if (v.includes("academic") || v.includes("research") || v.includes("psychology")) {
-    rules.push(
-      "Use precise, evidence-informed wording.",
-      "Briefly name constructs when relevant (e.g., 'growth mindset')."
-    );
+    rules.push("Use precise, evidence-informed wording.", "Briefly name constructs when relevant (e.g., 'growth mindset').");
   }
   if (v.includes("witty") || v.includes("humor") || v.includes("bronx")) {
-    rules.push(
-      "Allow a brief, dry quip when appropriate or when the user requests humor.",
-      "Keep humor clean, supportive, and one-liner length."
-    );
+    rules.push("Allow a brief, dry quip when appropriate or when the user requests humor.", "Keep humor clean, supportive, and one-liner length.");
   }
   if (v.includes("spiritual") || v.includes("faith")) {
-    rules.push(
-      "Keep a gentle, reflective tone.",
-      "Use purpose- and values-oriented language without preaching."
-    );
+    rules.push("Keep a gentle, reflective tone.", "Use purpose- and values-oriented language without preaching.");
   }
   if (v.includes("reflective") || v.includes("introspective")) {
-    rules.push(
-      "Pose one thoughtful, open-ended question to prompt reflection.",
-      "Use calm, measured pacing."
-    );
+    rules.push("Pose one thoughtful, open-ended question to prompt reflection.", "Use calm, measured pacing.");
   }
   if (v.includes("goal") || v.includes("driven")) {
-    rules.push(
-      "Close with a concrete next step.",
-      "Frame actions as commitments."
-    );
+    rules.push("Close with a concrete next step.", "Frame actions as commitments.");
   }
 
-  // Always ensure at least a baseline
   if (rules.length === 0) {
     rules.push("Use a professional, supportive coaching tone.");
   }
@@ -208,27 +151,26 @@ function deriveStyleChecklist(voice?: string): string[] {
   return rules;
 }
 
-
-// Put this near the top of the file (below types is fine)
 function resolveCoachPersona(input?: CoachPersona): CoachPersona | undefined {
   if (!input) return undefined;
 
-  // Try resolving by id first, then by name
   const t =
     (input.id && getTrainerById(input.id)) ||
     TRAINERS.find(tr => tr.id.toLowerCase() === (input.name ?? "").toLowerCase()) ||
     TRAINERS.find(tr => tr.name.toLowerCase() === (input.name ?? "").toLowerCase());
 
-  // Merge: explicit fields on input win; otherwise fall back to trainer data
   return {
     id: input.id ?? t?.id,
     name: input.name ?? t?.name ?? "Coach",
     style: input.style,
-    voice: input.voice ?? t?.voice,     // ⬅️ pull the canonical voice from trainers.ts
+    voice: input.voice ?? t?.voice,
     guardrails: input.guardrails,
   };
 }
 
+// ============================================================================
+// COACHING-FIRST SKILL DELIVERY
+// ============================================================================
 function wantsFullDetails(input: string): boolean {
   const s = input.toLowerCase();
   return /\b(all steps|full|detailed|details|everything|complete)\b/.test(s);
@@ -264,26 +206,19 @@ function getCoachingFirstSkillResponse(userInput: string, skillId: string, coach
   const stepsToShow = showAll ? skill.steps.length : Math.min(3, skill.steps.length);
 
   let out = "";
-
-  // 1) On-voice intro (non-verbatim)
   out += coachingIntro(skill.title, coach) + "\n\n";
-
-  // 2) Verbatim GOAL + WHEN (exact)
   out += `**${skill.title}** ${skill.goal}\n\n`;
   out += `**When to use:** ${skill.whenToUse}\n\n`;
 
-  // 3) Verbatim STEPS (partial by default)
   out += `**Steps to practice:**`;
   for (let i = 0; i < stepsToShow; i++) {
     out += `\n${i + 1}. ${skill.steps[i]}`;
   }
 
-  // Offer to expand if we truncated
   if (!showAll && stepsToShow < skill.steps.length) {
     out += `\n\n(There are more steps. Say **"show all steps"** for the complete sequence.)`;
   }
 
-  // 4) Optional benefits (verbatim, short)
   if (skill.benefits && skill.benefits.length > 0) {
     const maxBenefits = Math.min(2, skill.benefits.length);
     out += `\n\n**Scientific benefits:**`;
@@ -293,14 +228,53 @@ function getCoachingFirstSkillResponse(userInput: string, skillId: string, coach
     }
   }
 
-  // 5) On-voice CTA (non-verbatim)
   out += `\n\n${coachingCTA(skill.title, coach)}`;
-
   return out;
 }
 
+// ============================================================================
+// QUICK ACTIONS (Go-Bag + Practice Kit)
+// ============================================================================
+function goBagUrlForSkill(skillId: string): string {
+  return `/go-bag/skills/${skillId}`;
+}
 
-// ---- System prompt (curriculum-first) ----
+function detectSkillsInText(text: string): string[] {
+  const s = text.toLowerCase();
+  const found = new Set<string>();
+
+  for (const skill of MENTAL_ARMOR_SKILLS) {
+    const id = skill.id.toLowerCase();
+    const title = skill.title.toLowerCase();
+
+    if (s.includes(id) || s.includes(title)) {
+      found.add(skill.id);
+      continue;
+    }
+
+    const words = title.split(/\s+/);
+    for (let i = 0; i <= words.length - 3; i++) {
+      const phrase = words.slice(i, i + 3).join(" ");
+      if (s.includes(phrase)) { found.add(skill.id); break; }
+    }
+  }
+  return [...found];
+}
+
+function renderQuickActionsFooter(skillIds: string[]): string {
+  if (!skillIds.length) return "";
+  const lines = skillIds.map(id => {
+    const skill = MENTAL_ARMOR_SKILLS.find(s => s.id === id);
+    const title = skill?.title ?? id;
+    const url = goBagUrlForSkill(id);
+    return `• **${title}** — [Open in Go-Bag](${url}) · [Add to Practice Kit](action:add-to-practice-kit:${id})`;
+  });
+  return `\n\n---\n**Quick actions**\n${lines.join("\n")}`;
+}
+
+// ============================================================================
+// SYSTEM PROMPT
+// ============================================================================
 function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
   const skillCatalog = MENTAL_ARMOR_SKILLS.map((skill) => {
     return `**${skill.id}**: ${skill.title}
@@ -327,9 +301,7 @@ function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
     ? coach.voice.trim()
     : "Write with a professional, supportive coaching tone.";
 
-  const styleChecklist = deriveStyleChecklist(coach?.voice)
-    .map((r) => `- ${r}`)
-    .join("\n");
+  const styleChecklist = deriveStyleChecklist(coach?.voice).map((r) => `- ${r}`).join("\n");
 
   return `${coachHat}
 
@@ -347,11 +319,11 @@ SUPPORTIVE BASELINE (MANDATORY — higher priority than refusals):
 
 CRITICAL INSTRUCTION (Skills):
 - When users ask about a specific skill, respond IMMEDIATELY with the exact curriculum content.
-- Format:
-  1) GOAL (verbatim)
-  2) WHEN TO USE (verbatim)
-  3) STEPS (verbatim)
-  4) One-sentence, on-voice encouragement or next step
+- Delivery:
+  • Brief, on-voice intro.
+  • GOAL (verbatim) and WHEN TO USE (verbatim).
+  • By default, only the first 2–3 STEPS (verbatim). Offer 'show all steps' for the rest.
+  • One-sentence, on-voice encouragement or next step.
 
 STRICT GUARDRAILS:
 ${strictGuardrails}
@@ -363,88 +335,13 @@ ${skillCatalog}
 
 
 
-// ---- Direct skill content delivery ----
-function getDirectSkillResponse(skillId: string, coach?: CoachPersona): string {
-  const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId);
-  if (!skill) return "";
-
-  let response = "";
-  if (coach?.name) {
-    switch (coach.name.toLowerCase()) {
-      case "rhonda":
-        response += "That's a fundamental question that requires solid foundations. ";
-        break;
-      case "scotty":
-        response += "That's a deep question, friend. Let me share something that might help. ";
-        break;
-      case "terry":
-        response += "Now that's a question that's been around since humans started thinking. Here's what works in practice: ";
-        break;
-      case "aj":
-        response += "What an important question! I love that you're thinking about purpose. ";
-        break;
-      case "chris":
-        response += "That's the kind of question that builds character through reflection. ";
-        break;
-      case "jill":
-        response += "That's a profound question that touches on our core psychological needs. ";
-        break;
-      default:
-        response += "That's an important question. ";
-    }
-  }
-
-  response += `**${skill.title}** ${skill.goal}
-
-**When to use:** ${skill.whenToUse}
-
-**Steps to practice:**`;
-
-  skill.steps.forEach((step, index) => {
-    response += `\n${index + 1}. ${step}`;
-  });
-
-  if (skill.benefits && skill.benefits.length > 0) {
-    response += `\n\n**Scientific benefits:**`;
-    skill.benefits.slice(0, 3).forEach((benefit) => {
-      response += `\n• ${benefit}`;
-    });
-  }
-
-  if (coach?.name) {
-    switch (coach.name.toLowerCase()) {
-      case "rhonda":
-        response += "\n\nThis skill works if you work it. What's your next move?";
-        break;
-      case "scotty":
-        response += "\n\nTake this one step at a time, with patience and care.";
-        break;
-      case "terry":
-        response += "\n\nThis works in the real world when you practice it consistently.";
-        break;
-      case "aj":
-        response += "\n\nThis builds on strengths you already have. What do you notice you do well?";
-        break;
-      case "chris":
-        response += "\n\nGrowth comes through practicing these steps. What's the deeper challenge here?";
-        break;
-      case "jill":
-        response += "\n\nThis connects to your psychological well-being. How does this resonate with you?";
-        break;
-      default:
-        response += "\n\nReady to practice this skill?";
-    }
-  }
-
-  return response;
-}
-
-// ---- Detect skill mentions in user input ----
+// ============================================================================
+// USER SKILL MENTION DETECTION
+// ============================================================================
 function detectMentionedSkills(userInput: string): string[] {
   const input = userInput.toLowerCase();
   const mentionedSkills: string[] = [];
 
-  // Direct title/ID matching
   for (const skill of MENTAL_ARMOR_SKILLS) {
     const titleLower = skill.title.toLowerCase();
     if (input.includes(titleLower)) {
@@ -466,15 +363,14 @@ function detectMentionedSkills(userInput: string): string[] {
     }
   }
 
-  // Keyword-based with context
-  const skillKeywords = {
+  const skillKeywords: Record<string, string[]> = {
     "foundations-resilience": ["foundations", "resilience foundation", "resilience science", "neuroplasticity", "growth mindset"],
     "flex-your-strengths": ["flex strengths", "character strengths", "VIA", "signature strengths", "strengths finder"],
     "values-based-living": ["values based", "values living", "core values", "purpose", "meaningful goals"],
     "spiritual-resilience": ["spiritual resilience", "spiritual strength", "faith", "meaning", "transcendence"],
     "cultivate-gratitude": ["cultivate gratitude", "gratitude practice", "thankfulness", "appreciation"],
-    mindfulness: ["mindfulness", "mindful", "meditation", "present moment", "awareness"],
-    reframe: ["reframe", "reframing", "cognitive reframe", "change perspective"],
+    "mindfulness": ["mindfulness", "mindful", "meditation", "present moment", "awareness"],
+    "reframe": ["reframe", "reframing", "cognitive reframe", "change perspective"],
     "balance-your-thinking": ["balance thinking", "thinking balance", "cognitive balance", "examine evidence"],
     "whats-most-important": ["most important", "priorities", "what matters", "values clarification"],
     "interpersonal-problem-solving": ["interpersonal", "problem solving", "conflict resolution", "wind-up approach"],
@@ -498,40 +394,32 @@ function detectMentionedSkills(userInput: string): string[] {
   return [...new Set(mentionedSkills)];
 }
 
-// ---- Validate curriculum references ----
-
-// ---- Fallback response ----
+// ============================================================================
+// FALLBACK RESPONSE
+// ============================================================================
 function getFallbackResponse(coach?: CoachPersona): string {
   const fallbacks = [
-    "I hear what you're sharing. Mental Armor™ training gives us tools to build resilience through practice.",
-    "That sounds challenging. The Mental Armor™ approach helps us develop skills to withstand, recover, and grow.",
-    "Thank you for sharing that with me. Building mental armor takes practice and the right tools for each situation.",
+    "That sounds really heavy. I'm here with you. What feels hardest about it right now?",
+    "I hear you—it can take a lot to carry that. What’s one thing you want to shift today?",
+    "Thank you for sharing that with me. Where do you feel it most in your life right now?",
   ];
 
   let response = fallbacks[Math.floor(Math.random() * fallbacks.length)];
   if (coach?.name) {
     switch (coach.name.toLowerCase()) {
-      case "rhonda":
-        response += " What's your next move?";
-        break;
-      case "scotty":
-        response += " Take it one step at a time.";
-        break;
-      case "terry":
-        response += " Let's focus on what works in the real world.";
-        break;
-      case "aj":
-        response += " You have strengths to build on.";
-        break;
-      case "chris":
-        response += " Growth comes through practice and reflection.";
-        break;
+      case "rhonda": response += " What's your next move?"; break;
+      case "scotty": response += " Take it one step at a time."; break;
+      case "terry":  response += " Let's focus on what works in the real world."; break;
+      case "aj":     response += " You have strengths to build on."; break;
+      case "chris":  response += " Growth comes through practice and reflection."; break;
     }
   }
   return response;
 }
 
-// ---- Main response function ----
+// ============================================================================
+// MAIN RESPONSE
+// ============================================================================
 export async function getImprovedCoachResponse(opts: {
   history: ChatMsg[];
   userTurn: string;
@@ -539,69 +427,62 @@ export async function getImprovedCoachResponse(opts: {
   allowSuggestions?: boolean;
 }): Promise<CoachResponse> {
   const { history, userTurn, coach, allowSuggestions = true } = opts;
-  const resolvedCoach = resolveCoachPersona(opts.coach); // ⬅️ NEW
-  // 1) If user asked about a specific skill, return exact curriculum content
-  // 1) If user asked about a specific skill, return coaching-first curriculum content
-const mentionedSkills = detectMentionedSkills(userTurn);
-if (mentionedSkills.length > 0) {
-  const skillResponse = getCoachingFirstSkillResponse(userTurn, mentionedSkills[0], coach);
-  const relatedSuggestions = allowSuggestions
-    ? EnhancedSkillSuggestions.getSuggestions(userTurn, 2).filter((s) => s.skillId !== mentionedSkills[0])
-    : [];
-  return {
-    text: skillResponse,
-    suggestedSkills: relatedSuggestions,
-    suggestionMethod: "curriculum",
-    content: skillResponse,
-  };
-}
+  const resolvedCoach = resolveCoachPersona(coach);
 
-  // 0) Emergency stop for serious crime admissions (confessions)
-if (detectSeriousCrimeAdmission(userTurn)) {
-  const text = seriousCrimeResponse();
-  return {
-    text,
-    suggestedSkills: [],
-    suggestionMethod: "fallback",
-    content: text,
-    requiresEscalation: true,
-  };
-}
-
-// 0b) Emergency stop for imminent/future threats or crime intent
-if (detectImminentThreatIntent(userTurn)) {
-  const text = imminentThreatResponse();
-  return {
-    text,
-    suggestedSkills: [],
-    suggestionMethod: "fallback",
-    content: text,
-    requiresEscalation: true,
-  };
-}
-
+  // 0) Emergency stops
   if (detectSeriousCrimeAdmission(userTurn)) {
-  const text = seriousCrimeResponse();
-  return {
-    text,
-    suggestedSkills: [],
-    suggestionMethod: "fallback",
-    content: text,
-    requiresEscalation: true, // ⬅️ let your UI show a banner / disable normal chat, etc.
-  };
-}
-  if (mentionedSkills.length > 0) {
-    const skillResponse = getDirectSkillResponse(mentionedSkills[0], coach);
-    const relatedSuggestions = allowSuggestions
-    
-      ? EnhancedSkillSuggestions.getSuggestions(userTurn, 2).filter((s) => s.skillId !== mentionedSkills[0])
-      : [];
-      
+    const text = seriousCrimeResponse();
     return {
-      text: skillResponse,
+      text,
+      suggestedSkills: [],
+      suggestionMethod: "fallback",
+      content: text,
+      requiresEscalation: true,
+      escalationReason: "confession-serious-crime",
+    };
+  }
+
+  if (detectImminentThreatIntent(userTurn)) {
+    const text = imminentThreatResponse();
+    return {
+      text,
+      suggestedSkills: [],
+      suggestionMethod: "fallback",
+      content: text,
+      requiresEscalation: true,
+      escalationReason: "imminent-threat",
+    };
+  }
+
+  // 1) If user asked about a specific skill → coaching-first curriculum content
+  const mentionedSkills = detectMentionedSkills(userTurn);
+  if (mentionedSkills.length > 0) {
+    const skillId = mentionedSkills[0];
+    const skillResponse = getCoachingFirstSkillResponse(userTurn, skillId, resolvedCoach);
+
+    const relatedSuggestions = allowSuggestions
+      ? EnhancedSkillSuggestions.getSuggestions(userTurn, 2).filter((s) => s.skillId !== skillId)
+      : [];
+
+    const goBagLinks = [{
+      skillId,
+      title: MENTAL_ARMOR_SKILLS.find(s => s.id === skillId)!.title,
+      url: goBagUrlForSkill(skillId)
+    }];
+    const footer = renderQuickActionsFooter([skillId]);
+
+    const final = (skillResponse + footer).trim();
+
+    return {
+      text: final,
       suggestedSkills: relatedSuggestions,
       suggestionMethod: "curriculum",
-      content: skillResponse,
+      content: final,
+      mentionedSkillIds: [skillId],
+      actions: {
+        goBagLinks,
+        practiceKitAdd: [skillId],
+      },
     };
   }
 
@@ -618,8 +499,7 @@ if (detectImminentThreatIntent(userTurn)) {
     }
   }
 
-  // 3) Chat completion with system prompt (via Netlify function)
-   // 3) chat completion with *two* system messages:
+  // 3) Chat completion with *two* system messages (voice lock first)
   const sys = buildEnhancedSystemPrompt(resolvedCoach);
   const voiceLock = {
     role: "system" as const,
@@ -629,8 +509,8 @@ if (detectImminentThreatIntent(userTurn)) {
   };
 
   const messages = [
-    voiceLock,                                 // ⬅️ FIRST system message (strongest)
-    { role: "system" as const, content: sys }, // ⬅️ Your main rules + catalog
+    voiceLock,
+    { role: "system" as const, content: sys },
     ...history.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
     { role: "user" as const, content: userTurn },
   ];
@@ -643,21 +523,41 @@ if (detectImminentThreatIntent(userTurn)) {
     text = getFallbackResponse(resolvedCoach);
   }
 
+  // Detect skills mentioned in the assistant's own reply
+  const mentionedInReply = detectSkillsInText(text);
+
+  // Build UI actions + footer
+  const goBagLinks = mentionedInReply.map(id => ({
+    skillId: id,
+    title: MENTAL_ARMOR_SKILLS.find(s => s.id === id)?.title ?? id,
+    url: goBagUrlForSkill(id),
+  }));
+  const footer = renderQuickActionsFooter(mentionedInReply);
+
+  const finalText = (text + (footer || "")).trim();
+
   return {
-    text: text.trim(),
+    text: finalText,
     suggestedSkills,
     suggestionMethod,
-    content: text.trim(),
+    content: finalText,
+    mentionedSkillIds: mentionedInReply,
+    actions: {
+      goBagLinks,
+      practiceKitAdd: mentionedInReply,
+    },
   };
 }
 
-// ---- Wrapper used by RepairKit.tsx ----
+// ============================================================================
+// WRAPPER used by RepairKit.tsx
+// ============================================================================
 export function createMentalArmorAI(config?: string | { coach?: CoachPersona; allowSuggestions?: boolean }) {
   let coach: CoachPersona | undefined;
   let allowSuggestions = true;
 
   if (typeof config === "string") {
-    coach = { id: config, name: config }; // ⬅️ id preferred; name kept for backward-compat
+    coach = { id: config, name: config };
   } else if (config) {
     coach = config.coach;
     allowSuggestions = config.allowSuggestions ?? true;
