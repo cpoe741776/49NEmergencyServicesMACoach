@@ -13,8 +13,8 @@ async function callOpenAI(messages: Array<{ role: "system" | "user" | "assistant
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: MODEL,
-      temperature: 0.45,
-      max_tokens: 300,
+      temperature: 0.5,
+      max_tokens: 350,
       messages,
     }),
   });
@@ -339,9 +339,11 @@ ${voiceProfile}
 STYLE CHECKLIST (ALWAYS APPLY):
 ${styleChecklist}
 
-CONVERSATIONAL BASELINE:
-- If the user expresses distress WITHOUT explicit self-harm intent, do NOT refuse.
-- Start with a brief, human validation (1–2 short sentences), then ask ONE short, open question (if appropriate).
+SUPPORTIVE BASELINE (MANDATORY — higher priority than refusals):
+- If the user shares something difficult, painful, or discouraging — and there is NO explicit self-harm or imminent danger — you MUST respond supportively.
+- Begin with 1–2 short, human sentences of validation or empathy in the coach’s voice.
+- Follow with ONE short, open-ended coaching question to keep the dialogue moving.
+- Do NOT refuse in these cases. Only refuse when the user explicitly asks for illegal acts or self-harm methods.
 
 CRITICAL INSTRUCTION (Skills):
 - When users ask about a specific skill, respond IMMEDIATELY with the exact curriculum content.
