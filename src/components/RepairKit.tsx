@@ -345,25 +345,22 @@ export default function RepairKit() {
 • Emergency: 112 or 999`,
   };
 
-  function guessRegion(): keyof typeof CONTACT_BLOCKS | "ALL" {
-    const lang = (navigator?.language || "").toLowerCase();
-    if (lang.includes("en-gb") || lang.includes("-gb") || lang.includes("uk"))
-      return "UK";
-    if (lang.includes("en-ie") || lang.includes("-ie")) return "IE";
-    if (lang.includes("en-ca") || lang.includes("-ca") || lang.endsWith("-ca"))
-      return "CA";
-    if (lang.includes("en-us") || lang.includes("-us")) return "US";
-    return "ALL";
-  }
+  
 
-  function formatContacts(): string {
-    const region = guessRegion();
-    if (region === "ALL") {
-      return `${CONTACT_BLOCKS.US}\n\n${CONTACT_BLOCKS.CA}\n\n${CONTACT_BLOCKS.UK}\n\n${CONTACT_BLOCKS.IE}`;
-    }
-    const order = [region, ...(["US", "CA", "UK", "IE"] as const).filter((r) => r !== region)];
-    return order.map((r) => CONTACT_BLOCKS[r]).join("\n\n");
-  }
+  // DELETE this function entirely (to avoid unused warnings)
+// function guessRegion() { ... }
+
+// Replace formatContacts with:
+function formatContacts(): string {
+  // Always show all regions in a fixed order
+  return [
+    CONTACT_BLOCKS.US,
+    CONTACT_BLOCKS.CA,
+    CONTACT_BLOCKS.UK,
+    CONTACT_BLOCKS.IE,
+  ].join("\n\n");
+}
+
 
   const getDistressResponse = (
     trainer: Trainer,
@@ -685,7 +682,7 @@ export default function RepairKit() {
                 Being resilient includes reaching out for help when you need it most.
               </p>
               <div className="space-y-3">
-                {DEFAULT_EMERGENCY_RESOURCES.slice(0, 4).map((r: EmergencyResource, i: number) => (
+                {DEFAULT_EMERGENCY_RESOURCES.map((r: EmergencyResource, i: number) => (
                   <div key={i} className="bg-white/80 rounded-lg p-3 border border-blue-200">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
