@@ -417,8 +417,12 @@ const fromMentioned =
 
 const chosen = fromSuggestions || fromMentioned;
 setLastSuggestedSkill(chosen ? { id: chosen.id, title: chosen.title } : null);
+const wantsToStart = /\b(yes|yep|sure|okay|ok|let'?s (try|do) it|lets (try|do) it|continue|start coaching|help me (through|with) (it|this|the skill)|walk me through (it|this)|coach me (through|on) (it|this)|guide me (through|on) (it|this))\b/i.test(content);
 // If the user just affirmed and we have a last suggested/mentioned skill,
 // jump straight into active coaching for that skill.
+if (!coachingSession.isActive && chosen && wantsToStart) {
+  startCoachingSession(chosen.id, chosen.title);
+}
 if (!coachingSession.isActive && lastSuggestedSkill) {
   const affirmative = /^(yes|yep|sure|okay|ok|let'?s try it|lets try it|continue)\b/i.test(content);
   if (affirmative) {

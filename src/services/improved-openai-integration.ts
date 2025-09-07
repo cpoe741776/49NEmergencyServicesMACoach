@@ -513,39 +513,56 @@ function getFallbackResponse(coach?: CoachPersona): string {
 
 function userRequestsAnotherSkill(userInput: string, currentSkillId?: string) {
   const s = userInput.toLowerCase();
-  const wantsOther =
-    /\b(other skill|another skill|different skill|something else|what else|show more skills|more skills|new skill|other options)\b/.test(s);
 
+  // Broaden triggers: "other skill(s)", "recommend other skills", "switch skill", etc.
+  const wantsOther = /\b((any )?other skill(s)?|another skill|different skill|something else|what else|recommend (another|other) skill(s)?|show (more|other) skills|more skills|new skill|other options|switch skill)\b/.test(s);
+
+  // If they actually NAME a different skill, allow the switch too
   const mentioned = detectMentionedSkills(userInput).filter(id => id !== currentSkillId);
-  // Allow if they explicitly want other skills OR they named a different skill
+
   return { allow: wantsOther || mentioned.length > 0, requestedIds: mentioned };
 }
+
 // ============================================================================
 // MAIN RESPONSE FUNCTION
 // ============================================================================
-function parseCoachingStepIntent(userInput: string, ctx?: CoachingContext): { nextStep?: number; end?: boolean } {
+function parseCoachingStepIntent(
+  userInput: string,
+  ctx?: CoachingContext
+): { nextStep?: number; end?: boolean } {
   if (!ctx?.skillId) return {};
   const s = userInput.toLowerCase();
   const total = ctx.totalSteps ?? 1;
   const cur = ctx.currentStep ?? 1;
 
-  // explicit "step N"
+  // Explicit "step N"
   const m = s.match(/\bstep\s*([0-9]{1,2})\b/);
   if (m) {
     const n = parseInt(m[1], 10);
     if (n >= 1 && n <= total) return { nextStep: n };
   }
 
-  // “what’s next / next step / continue / move on / proceed…”
-  if (/\b(what'?s next|next step|continue|move on|proceed|keep going|advance)\b/.test(s)) {
+  // “what is next / what's next / what next / next step / continue / move on / proceed / keep going / advance”
+  if (/\b(what is next|what'?s next|whats next|what next|next step|continue|move on|proceed|keep going|advance)\b/.test(s)) {
     return { nextStep: Math.min(cur + 1, total) };
   }
 
-  // done / end session
+  // Auto-advance heuristic for Step 1 (e.g., Values Based Living):
+  // If they listed 2+ items like values, go to Step 2.
+  if (cur === 1) {
+    const listy = s.includes(",") || /\band\b/.test(s) || /\bvalues?\b/.test(s) || /\bmy values (are|:)\b/.test(s);
+    if (listy) {
+      const tokens = s.split(/,| and | & |\/|;|\n/g).map(t => t.trim()).filter(t => /[a-z]{3,}/i.test(t));
+      if (tokens.length >= 2) {
+        return { nextStep: Math.min(cur + 1, total) };
+      }
+    }
+  }
+
+  // End session
   if (/\b(end session|stop|done|finish(?:ed)?|complete(?:d)?)\b/.test(s)) {
     return { end: true };
   }
-
   return {};
 }
 
