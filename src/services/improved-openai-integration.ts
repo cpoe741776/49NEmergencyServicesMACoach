@@ -13,7 +13,7 @@ async function callOpenAI(messages: Array<{ role: "system" | "user" | "assistant
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: MODEL,
-      temperature: 0.3,
+      temperature: 0.45,
       max_tokens: 300,
       messages,
     }),
@@ -47,6 +47,65 @@ export type CoachResponse = {
   content?: string;
   requiresEscalation?: boolean;
 };
+
+function deriveStyleChecklist(voice?: string): string[] {
+  const v = (voice || "").toLowerCase();
+
+  const rules: string[] = [];
+
+  // Tone & cadence
+  if (v.includes("direct") || v.includes("military") || v.includes("general")) {
+    rules.push(
+      "Use short, direct sentences.",
+      "Prefer active voice and imperative verbs.",
+      "Avoid hedging (no 'maybe', 'might', 'perhaps' unless necessary)."
+    );
+  }
+  if (v.includes("warm") || v.includes("kind") || v.includes("support") || v.includes("empath")) {
+    rules.push(
+      "Lead with brief empathy before guidance.",
+      "Use approachable, encouraging phrasing."
+    );
+  }
+  if (v.includes("academic") || v.includes("research") || v.includes("psychology")) {
+    rules.push(
+      "Use precise, evidence-informed wording.",
+      "Briefly name constructs when relevant (e.g., 'growth mindset')."
+    );
+  }
+  if (v.includes("witty") || v.includes("humor") || v.includes("bronx")) {
+    rules.push(
+      "Allow a brief, dry quip when appropriate or when the user requests humor.",
+      "Keep humor clean, supportive, and one-liner length."
+    );
+  }
+  if (v.includes("spiritual") || v.includes("faith")) {
+    rules.push(
+      "Keep a gentle, reflective tone.",
+      "Use purpose- and values-oriented language without preaching."
+    );
+  }
+  if (v.includes("reflective") || v.includes("introspective")) {
+    rules.push(
+      "Pose one thoughtful, open-ended question to prompt reflection.",
+      "Use calm, measured pacing."
+    );
+  }
+  if (v.includes("goal") || v.includes("driven")) {
+    rules.push(
+      "Close with a concrete next step.",
+      "Frame actions as commitments."
+    );
+  }
+
+  // Always ensure at least a baseline
+  if (rules.length === 0) {
+    rules.push("Use a professional, supportive coaching tone.");
+  }
+
+  return rules;
+}
+
 
 // Put this near the top of the file (below types is fine)
 function resolveCoachPersona(input?: CoachPersona): CoachPersona | undefined {
@@ -84,82 +143,50 @@ function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
     : `You are an expert Mental Armor™ coach.`;
 
   const strictGuardrails = [
-    "CRITICAL: Use ONLY the exact language from the Mental Armor™ skill catalog below",
-    "NEVER create new skills, exercises, or concepts not in the catalog",
-    "NEVER modify or paraphrase the curriculum language - quote it exactly",
-    "If referencing a skill, use its exact title and goal statement",
-    "Focus on supportive coaching using only established Mental Armor™ concepts",
-    "If uncertain about curriculum accuracy, be more general rather than specific",
+    "CRITICAL: Do NOT invent new skills, exercises, or concepts outside the catalog.",
+    "For the GOAL, WHEN TO USE, and STEPS sections, quote the catalog EXACTLY (verbatim).",
+    "Before/after those sections, you MAY add brief coaching in the coach's voice.",
+    "Stay within the Mental Armor™ framework at all times.",
     ...(coach?.guardrails ?? []),
-  ]
-    .map((x) => `- ${x}`)
+  ].map((x) => `- ${x}`).join("\n");
+
+  const voiceProfile = (coach?.voice && coach.voice.trim().length > 0)
+    ? coach.voice.trim()
+    : "Write with a professional, supportive coaching tone.";
+
+  const styleChecklist = deriveStyleChecklist(coach?.voice)
+    .map((r) => `- ${r}`)
     .join("\n");
 
   return `${coachHat}
 
-CONVERSATIONAL BASELINE (do not violate safety, do not invent skills):
+VOICE PROFILE (MANDATORY — keep this tone, diction, and cadence in every reply, including refusals and redirects):
+${voiceProfile}
+
+STYLE CHECKLIST (ALWAYS APPLY):
+${styleChecklist}
+
+CONVERSATIONAL BASELINE:
 - If the user expresses distress WITHOUT explicit self-harm intent, do NOT refuse.
-- Start with a brief, human validation (1–2 short sentences), then ask ONE short, open question.
+- Start with a brief, human validation (1–2 short sentences), then ask ONE short, open question (if appropriate).
 
-CRITICAL INSTRUCTION: When users ask about specific Mental Armor™ skills, respond IMMEDIATELY with the exact curriculum content. Do NOT give general explanations about the program first.
-
-RESPONSE FORMAT FOR SKILL QUESTIONS:
-1. Lead with the skill's exact GOAL statement
-2. Follow with exact WHEN TO USE guidance  
-3. Include the exact STEPS from curriculum
-4. Add brief coach-specific encouragement at the end
-
-STRICT RULES:
-- Use ONLY exact language from Mental Armor™ curriculum
-- NEVER create new content
-- When a skill is mentioned, give its specific content immediately
-- Keep responses focused on the skills
-
-MENTAL ARMOR™ SKILL CATALOG (USE EXACT LANGUAGE ONLY):
-${skillCatalog}
+CRITICAL INSTRUCTION (Skills):
+- When users ask about a specific skill, respond IMMEDIATELY with the exact curriculum content.
+- Format:
+  1) GOAL (verbatim)
+  2) WHEN TO USE (verbatim)
+  3) STEPS (verbatim)
+  4) One-sentence, on-voice encouragement or next step
 
 STRICT GUARDRAILS:
 ${strictGuardrails}
 
-RESPONSE EXAMPLES:
-
-If asked about "Foundations of Resilience":
-"**Foundations of Resilience** helps you learn how resilience helps us withstand, recover, and grow — and why understanding its foundations is essential to mental strength and endurance.
-
-**When to use:** When you need the science of resilience, why practice matters day-to-day, or the right mindset for developing resilience in yourself and others.
-
-**Steps to practice:**
-1. Watch the introduction (Dr. Cornum's story)
-2. Learn to define resilience and its attributes
-3. Watch real examples and identify attributes in action
-4. Choose 3—5 attributes that describe you; reflect on a time you used them
-5. Debunk common myths about resilient people
-6. Learn the science (neuroplasticity)
-7. Adopt a growth mindset"
-
-If asked about "Mindfulness":
-"**Mindfulness** helps you reduce stress and distraction; stay focused, calm, and engaged.
-
-**When to use:** Regularly; when distracted; when stressed or overwhelmed.
-
-**Steps to practice:**
-1. Practice informally during everyday activities (eat, walk, chores)
-2. Practice formally (brief meditation, visualization, focused breathing)
-3. Use in the moment (deep breaths; five-senses grounding: notice what you see/hear/feel, etc.)"
-
-COACH-SPECIFIC GUIDANCE:
-${coach?.name === "rhonda" ? 'End with: "This skill works if you work it. What\'s your next move?"' : ""}
-${coach?.name === "scotty" ? 'End with: "Take this one step at a time, with patience and care."' : ""}
-${coach?.name === "terry" ? 'End with: "This works in the real world when you practice it consistently."' : ""}
-${coach?.name === "aj" ? 'End with: "This builds on strengths you already have."' : ""}
-${coach?.name === "chris" ? 'End with: "Growth comes through practicing these steps."' : ""}
-
-GENERAL COACHING APPROACH:
-- Provide supportive guidance using only curriculum concepts
-- Keep responses focused on understanding and practical application
-- Use exact curriculum language for all skill references
-- When suggesting strategies, stay within the Mental Armor™ framework at all times`;
+MENTAL ARMOR™ SKILL CATALOG (USE EXACT LANGUAGE in GOAL/WHEN/STEPS):
+${skillCatalog}
+`;
 }
+
+
 
 // ---- Direct skill content delivery ----
 function getDirectSkillResponse(skillId: string, coach?: CoachPersona): string {
