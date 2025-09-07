@@ -46,7 +46,109 @@ export type CoachResponse = {
   suggestionMethod: "curriculum" | "ai-validated" | "fallback";
   content?: string;
   requiresEscalation?: boolean;
+  escalationReason?: "confession-serious-crime" | "imminent-threat"; //
 };
+
+// ============================================================================
+// IMMINENT / FUTURE HARM INTENT HANDLING
+// ============================================================================
+
+/**
+ * Detect statements indicating intent or plans to harm people/animals
+ * or commit serious crimes in the future (or imminently).
+ * Keep patterns focused to reduce false positives.
+ */
+function detectImminentThreatIntent(text: string): boolean {
+  const s = text.toLowerCase();
+
+  if (s.length < 6) return false;
+
+  const patterns: RegExp[] = [
+    // Intent to physically harm / kill a person
+    /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(kill|murder|stab|shoot|hurt|harm|attack|assault)\b/,
+    /\b(i|we)\s+(want|wanna|wish)\s+to\s+(kill|murder|stab|shoot|hurt|harm|attack|assault)\b/,
+    // Harm directed at a specific target
+    /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(hurt|harm|kill|beat)\b.*\b(him|her|them|someone|person|man|woman|boy|girl)\b/,
+    // Violent/serious crime plans
+    /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(rob|mug|carjack|home-?invade|kidnap)\b/,
+    // Arson/vandalism threats
+    /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(burn|set\s+fire|torch|bomb)\b/,
+    // Animal cruelty intent
+    /\b(i|we)\s+(am|'m|plan|planning|going|gonna|intend|thinking)\s+(to|of)\s+(kill|hurt|harm|torture|poison)\b.*\b(dog|cat|animal|pet)\b/,
+  ];
+
+  return patterns.some((re) => re.test(s));
+}
+
+/**
+ * Stock response for threats/intent of harm or serious crime.
+ * No coaching on how to proceed; clear emergency redirection.
+ */
+function imminentThreatResponse(): string {
+  return [
+    "I can’t help with plans or intentions to harm anyone or commit a crime.",
+    "",
+    "If there’s a risk of harm, contact emergency services right now:",
+    "- **999** or **112** (UK/EU) • **911** (US) • or your local emergency number.",
+    "",
+    "If you’re feeling overwhelmed or angry, step away from the situation and speak to someone you trust, or contact a crisis line for immediate support.",
+  ].join("\n");
+}
+
+
+// ============================================================================
+// SERIOUS CRIME ADMISSION HANDLING
+// ============================================================================
+
+/**
+ * Detect explicit admissions of having COMMITTED a serious violent/sexual crime
+ * or animal cruelty. This intentionally avoids "plans/intent" (future) and
+ * focuses on past/present-tense confessions (e.g., "I killed", "I raped").
+ * Keep patterns narrow to reduce false positives.
+ */
+function detectSeriousCrimeAdmission(text: string): boolean {
+  const s = text.toLowerCase();
+
+  // Quick exit on very short texts
+  if (s.length < 6) return false;
+
+  // Past/present-tense verbs commonly used in confessions + key nouns
+  // We pair verbs + objects to lower false positives.
+  const patterns: RegExp[] = [
+    // homicide / murder
+    /\b(i|we)\s+(have\s+)?(killed|murdered|shot|stabbed|strangled)\b.*\b(person|someone|him|her|them|man|woman|boy|girl)\b/,
+    // sexual assault (use careful phrasing to avoid accidental matches)
+    /\b(i|we)\s+(have\s+)?(raped|assaulted)\b.*\b(person|someone|him|her|them|man|woman|boy|girl)\b/,
+    // robbery/violent theft
+    /\b(i|we)\s+(have\s+)?(robbed|mugged|carjacked|home-?invaded)\b/,
+    // severe animal cruelty
+    /\b(i|we)\s+(have\s+)?(killed|tortured|hurt|beat|poisoned)\b.*\b(dog|cat|animal|pet)\b/,
+    // arson causing harm
+    /\b(i|we)\s+(have\s+)?(set\s+fire|committed\s+arson)\b.*\b(house|home|building|car|property)\b/,
+    // child abuse (past/present admissions)
+    /\b(i|we)\s+(have\s+)?(abused|hurt|molested|assaulted)\b.*\b(child|kid|minor)\b/,
+  ];
+
+  return patterns.some(re => re.test(s));
+}
+
+/**
+ * Stock emergency response. No details, no coaching; clear boundaries.
+ * Includes international emergency guidance (112/999/911) and legal counsel.
+ */
+function seriousCrimeResponse(): string {
+  return [
+    "I can’t engage on confessions of criminal acts.",
+    "",
+    "If anyone is in immediate danger, contact emergency services now:",
+    "- **999** or **112** (UK/EU) • **911** (US) • or your local emergency number.",
+    "",
+    "For legal matters, speak with a qualified attorney. I cannot provide advice on illegal activities or help conceal them.",
+    "",
+    "If you’re struggling with what happened and there’s risk of harm to you or others, reach out for urgent support (e.g., your local crisis line or emergency services)."
+  ].join("\n");
+}
+
 
 function deriveStyleChecklist(voice?: string): string[] {
   const v = (voice || "").toLowerCase();
@@ -367,6 +469,40 @@ export async function getImprovedCoachResponse(opts: {
   const resolvedCoach = resolveCoachPersona(opts.coach); // ⬅️ NEW
   // 1) If user asked about a specific skill, return exact curriculum content
   const mentionedSkills = detectMentionedSkills(userTurn);
+  // 0) Emergency stop for serious crime admissions (confessions)
+if (detectSeriousCrimeAdmission(userTurn)) {
+  const text = seriousCrimeResponse();
+  return {
+    text,
+    suggestedSkills: [],
+    suggestionMethod: "fallback",
+    content: text,
+    requiresEscalation: true,
+  };
+}
+
+// 0b) Emergency stop for imminent/future threats or crime intent
+if (detectImminentThreatIntent(userTurn)) {
+  const text = imminentThreatResponse();
+  return {
+    text,
+    suggestedSkills: [],
+    suggestionMethod: "fallback",
+    content: text,
+    requiresEscalation: true,
+  };
+}
+
+  if (detectSeriousCrimeAdmission(userTurn)) {
+  const text = seriousCrimeResponse();
+  return {
+    text,
+    suggestedSkills: [],
+    suggestionMethod: "fallback",
+    content: text,
+    requiresEscalation: true, // ⬅️ let your UI show a banner / disable normal chat, etc.
+  };
+}
   if (mentionedSkills.length > 0) {
     const skillResponse = getDirectSkillResponse(mentionedSkills[0], coach);
     const relatedSuggestions = allowSuggestions
