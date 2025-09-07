@@ -1,9 +1,11 @@
-// src/components/RepairKit.tsx
-import { useState, useRef, useEffect } from "react";
+// src/components/RepairKit.tsx - COMPLETE INTEGRATION FIX
+// Replace your existing RepairKit.tsx with this enhanced version
+
+import { useState, useRef, useEffect, useMemo } from "react";
 import type { MentalArmorSkill, EmergencyResource } from "@/types/emergency";
 import { MENTAL_ARMOR_SKILLS } from "@/data/skills";
 import { TRAINERS, type Trainer } from "@/data/trainers";
-import { createMentalArmorAI } from "@/services/improved-openai-integration";
+import { createMentalArmorAI, type CoachingContext } from "@/services/improved-openai-integration";
 import PracticeSession from "@/components/PracticeSession";
 import { type PracticeSessionData } from "@/data/practices";
 import ReactMarkdown from "react-markdown";
@@ -11,7 +13,7 @@ import remarkGfm from "remark-gfm";
 import { sessionManager } from "@/utils/sessionManager";
 import PrivacyConsent from "@/components/PrivacyConsent";
 
-// Keep numbers distinct & always flag with country emoji
+// Emergency Resources (unchanged)
 const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
   // United States
   {
@@ -35,7 +37,6 @@ const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
     available: "24/7",
     description: "Immediate emergency response for life-threatening situations",
   },
-
   // Canada
   {
     type: "crisis",
@@ -65,7 +66,6 @@ const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
     available: "24/7",
     description: "Immediate emergency response for life-threatening situations",
   },
-
   // United Kingdom
   {
     type: "crisis",
@@ -88,7 +88,6 @@ const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
     available: "24/7",
     description: "Immediate emergency response for life-threatening situations",
   },
-
   // Ireland
   {
     type: "crisis",
@@ -106,66 +105,7 @@ const DEFAULT_EMERGENCY_RESOURCES: EmergencyResource[] = [
   },
 ];
 
-// CRITICAL Emergency Keywords - Enhanced Detection
-const EMERGENCY_KEYWORDS = [
-  // Weapons/Methods - CRITICAL
-  "gun", "weapon", "knife", "blade", "pills", "overdose", "rope", "noose", "poison",
-  "jump", "bridge", "cliff", "train", "traffic", "car crash", "building", "roof",
-  "hanging", "suffocate", "drown", "gas",
-
-  // Direct suicide language
-  "suicide", "kill myself", "end it all", "take my life", "end my life", "want to die",
-  "wish I was dead", "better off dead", "not worth living",
-
-  // Self-harm with methods
-  "hurt myself", "self-harm", "cut myself", "harm myself", "cutting",
-
-  // Violence to others
-  "hurt someone", "kill someone", "harm others", "shoot someone",
-
-  // Planning/immediacy
-  "have a plan", "going to do it", "tonight", "today", "right now", "final decision",
-  "made up my mind", "goodbye", "this is it",
-];
-
-const CRISIS_KEYWORDS = {
-  CRITICAL: [
-    // Weapons/methods
-    "gun", "weapon", "knife", "blade", "pills", "overdose", "rope", "noose", "poison",
-    "jump off", "bridge", "cliff", "hanging", "suffocate",
-
-    // Immediate suicide language
-    "suicide", "kill myself", "end my life", "take my life", "want to die", "end it all",
-    "better off dead", "wish I was dead", "not worth living", "going to do it", "have a plan",
-    "tonight", "today", "right now",
-
-    // Violence
-    "hurt someone", "kill someone", "shoot someone", "stab someone",
-  ],
-  HIGH: [
-    "hopeless", "worthless", "no point living", "give up", "can't go on", "meaningless",
-    "lost all hope", "no way out", "trapped forever", "nothing left", "burden to everyone",
-    "everyone better without me", "hate my life", "i hate my life", "life sucks",
-    "done with everything", "can't do this anymore",
-  ],
-  MEDIUM: [
-    // Only truly overwhelming situations, not regular anxiety
-    "falling apart", "breaking down", "can't cope", "losing it", "at my limit",
-    "spiraling", "out of control", "mental breakdown", "can't handle anymore",
-    "completely overwhelmed", "drowning in",
-  ],
-  LOW: [
-    // Regular stress/anxiety
-    "stressed", "anxious", "worried", "tired", "exhausted", "struggling", "difficult",
-    "tough time", "frustrated", "upset", "sad", "anxiety", "nervous", "tense",
-    "overwhelmed", "high anxiety", "panic", "stress",
-  ],
-};
-
-const aiService = createMentalArmorAI({ allowSuggestions: true });
-
 type ChatKind = "user" | "assistant" | "system";
-type Distress = "none" | "low" | "medium" | "high" | "critical";
 
 interface SkillSuggestion {
   skillId: string;
@@ -196,11 +136,20 @@ interface PracticeSession {
   trainerId?: string;
 }
 
+// NEW: Coaching Session State Interface
+interface CoachingSession {
+  skillId?: string;
+  skillTitle?: string;
+  currentStep: number;
+  stepData: Record<string, string>;
+  isActive: boolean;
+}
+
 export default function RepairKit() {
   const [activeTab, setActiveTab] =
     useState<"chat" | "practice" | "resources" | "coaches">("coaches");
 
-  // Honor tab hint from Profile (e.g., "practice") when RepairKit mounts
+  // Honor tab hint from Profile
   useEffect(() => {
     const hint = localStorage.getItem("repair-kit-tab");
     if (
@@ -226,8 +175,64 @@ export default function RepairKit() {
   const [showPrivacyConsent, setShowPrivacyConsent] = useState(false);
   const [storageEnabled, setStorageEnabled] = useState(false);
 
+  // NEW: Coaching Session State
+  const [coachingSession, setCoachingSession] = useState<CoachingSession>({
+    currentStep: 0,
+    stepData: {},
+    isActive: false
+  });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // ENHANCED: Dynamic AI Service Creation with Coaching Context
+  const aiService = useMemo(() => {
+    if (!selectedTrainer) return null;
+    
+    const coachingContext: CoachingContext = {
+      mode: coachingSession.isActive ? 'active_coaching' : 'general_support',
+      skillId: coachingSession.skillId,
+      skillTitle: coachingSession.skillTitle,
+      currentStep: coachingSession.currentStep,
+      stepData: coachingSession.stepData,
+      totalSteps: coachingSession.skillId ? 
+        MENTAL_ARMOR_SKILLS.find(s => s.id === coachingSession.skillId)?.steps.length : 
+        undefined,
+      allowSkillSuggestions: !coachingSession.isActive, // Only allow suggestions when not in active coaching
+      practiceMode: activeTab === "practice",
+    };
+
+    return createMentalArmorAI({
+      coach: {
+        id: selectedTrainer.id,
+        name: selectedTrainer.name,
+        voice: selectedTrainer.voice,
+      },
+      allowSuggestions: !coachingSession.isActive,
+      context: coachingContext
+    });
+  }, [selectedTrainer, coachingSession, activeTab]);
+
+  // Coaching session management functions
+  const startCoachingSession = (skillId: string, skillTitle: string) => {
+    setCoachingSession({
+      skillId,
+      skillTitle,
+      currentStep: 1,
+      stepData: {},
+      isActive: true
+    });
+  };
+
+  
+
+  const endCoachingSession = () => {
+    setCoachingSession({
+      currentStep: 0,
+      stepData: {},
+      isActive: false
+    });
+  };
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
@@ -318,44 +323,6 @@ export default function RepairKit() {
     }
   }, [selectedTrainer?.id]);
 
-  // Enhanced Detection Functions
-  const detectDistressLevel = (text: string): Distress => {
-    const t = text.toLowerCase();
-
-    if (CRISIS_KEYWORDS.CRITICAL.some((k: string) => t.includes(k.toLowerCase())))
-      return "critical";
-    if (CRISIS_KEYWORDS.HIGH.some((k: string) => t.includes(k.toLowerCase())))
-      return "high";
-    if (CRISIS_KEYWORDS.MEDIUM.some((k: string) => t.includes(k.toLowerCase())))
-      return "medium";
-    if (CRISIS_KEYWORDS.LOW.some((k: string) => t.includes(k.toLowerCase())))
-      return "low";
-    return "none";
-  };
-
-  const detectEmergencySignals = (text: string): boolean => {
-    const t = text.toLowerCase();
-
-    // Primary emergency detection
-    const hasEmergency = EMERGENCY_KEYWORDS.some((k: string) =>
-      t.includes(k.toLowerCase())
-    );
-    const hasCritical = CRISIS_KEYWORDS.CRITICAL.some((k: string) =>
-      t.includes(k.toLowerCase())
-    );
-
-    // Enhanced phrase detection for context
-    const emergencyPhrases = [
-      "have a gun", "got a weapon", "holding a knife", "pills ready", "standing on",
-      "ready to jump", "tied the rope", "wrote goodbye", "final decision", "going to do it",
-      "tonight's the night", "this is it", "time to go", "can't take another day",
-    ];
-
-    const hasEmergencyPhrase = emergencyPhrases.some((phrase) => t.includes(phrase));
-
-    return hasEmergency || hasCritical || hasEmergencyPhrase;
-  };
-
   const getTrainerWelcomeMessage = (trainer: Trainer): string => {
     switch (trainer.id) {
       case "scotty":
@@ -375,70 +342,14 @@ export default function RepairKit() {
     }
   };
 
-  // Country-separated contact blocks for AI messages
-  const CONTACT_BLOCKS = {
-    US: `🇺🇸 United States:
-• Suicide & Crisis Lifeline: 988 (24/7)
-• Crisis Text Line: Text HOME to 741741 (24/7)
-• Emergency: 911`,
-    CA: `🇨🇦 Canada:
-• Suicide Crisis Helpline: 988 (24/7)
-• Canada Suicide Prevention Service: 1-833-456-4566 (24/7)
-• Crisis Text Line: Text HOME to 686868 (24/7)
-• Emergency: 911`,
-    UK: `🇬🇧 United Kingdom:
-• Samaritans: 116 123 (24/7)
-• Shout (text): Text SHOUT to 85258 (24/7)
-• Emergency: 999`,
-    IE: `🇮🇪 Ireland:
-• Text About It: Text HOME to 50808 (24/7)
-• Emergency: 112 or 999`,
-  };
-
-  function guessRegion(): keyof typeof CONTACT_BLOCKS | "ALL" {
-    const lang = (navigator?.language || "").toLowerCase();
-    if (lang.includes("en-gb") || lang.includes("-gb") || lang.includes("uk"))
-      return "UK";
-    if (lang.includes("en-ie") || lang.includes("-ie")) return "IE";
-    if (lang.includes("en-ca") || lang.includes("-ca") || lang.endsWith("-ca"))
-      return "CA";
-    if (lang.includes("en-us") || lang.includes("-us")) return "US";
-    return "ALL";
-  }
-
-  function formatContacts(): string {
-    const region = guessRegion();
-    if (region === "ALL") {
-      return `${CONTACT_BLOCKS.US}\n\n${CONTACT_BLOCKS.CA}\n\n${CONTACT_BLOCKS.UK}\n\n${CONTACT_BLOCKS.IE}`;
-    }
-    const order = [region, ...(["US", "CA", "UK", "IE"] as const).filter((r) => r !== region)];
-    return order.map((r) => CONTACT_BLOCKS[r]).join("\n\n");
-  }
-
-  const getDistressResponse = (
-    trainer: Trainer,
-    _userMessage: string,
-    level: Exclude<Distress, "none">
-  ): string => {
-    const contacts = formatContacts();
-
-    if (level === "critical") {
-      return `I'm very concerned about your safety. Please reach out immediately:\n\n${contacts}\n\nYour life has value. We can pause practice and focus on safety first.`;
-    }
-    if (level === "high") {
-      return `I hear you're in real pain. If you need immediate help, here are options:\n\n${contacts}\n\nWe can anchor to meaning—try Values-Based Living, Spiritual Resilience, or What's Most Important. Which fits right now?`;
-    }
-    if (level === "medium") {
-      return `That sounds really challenging. If things feel unmanageable, support is available:\n\n${contacts}\n\nLet's focus on what might help right now.`;
-    }
-    // LOW
-    return `That sounds stressful. If it ever becomes overwhelming, support is available:\n\n${contacts}\n\nLet's work on some skills that can help with these feelings.`;
-  };
+  
 
   const handleTrainerSelect = (trainer: Trainer) => {
     setSelectedTrainer(trainer);
     setExpandedBioId(null);
     setMessages([]);
+    // Reset coaching session when changing trainers
+    endCoachingSession();
     setActiveTab("chat");
   };
 
@@ -462,9 +373,10 @@ export default function RepairKit() {
     return enhancedContent;
   };
 
+  // ENHANCED: Message Handling with Coaching Session Support
   const handleSendMessage = async () => {
     const content = inputMessage.trim();
-    if (!content || !selectedTrainer) return;
+    if (!content || !selectedTrainer || !aiService) return;
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -476,14 +388,8 @@ export default function RepairKit() {
     setInputMessage("");
     setIsLoading(true);
 
-    const emergency = detectEmergencySignals(content);
-    const distress = detectDistressLevel(content);
-    if (emergency || distress === "critical") {
-      setShowEmergencyAlert(true);
-    }
-
     try {
-      // Get AI response
+      // Get AI response with coaching context
       const history = messages.map((m) => ({
         role: m.type as "user" | "assistant",
         content: m.content,
@@ -491,19 +397,13 @@ export default function RepairKit() {
 
       const aiResponse = await aiService.send(content, history);
 
-      let finalContent = aiResponse.text;
-      const skillSuggestions = aiResponse.suggestedSkills || [];
-
-      // If distress detected, override with distress response but keep skill suggestions
-      if (distress !== "none") {
-        finalContent = getDistressResponse(selectedTrainer, content, distress);
-
-        // For low/medium distress, append skill suggestions to the response
-        if ((distress === "low" || distress === "medium") && skillSuggestions.length > 0) {
-          const skillNames = skillSuggestions.map((s) => s.skill?.title || s.skillId).join(", ");
-          finalContent += `\n\nConsider trying: ${skillNames}. Would you like to explore any of these?`;
-        }
+      // Check if AI response indicates emergency escalation
+      if (aiResponse.requiresEscalation) {
+        setShowEmergencyAlert(true);
       }
+
+      const finalContent = aiResponse.text;
+      const skillSuggestions = aiResponse.suggestedSkills || [];
 
       // Enhance the final content with skill links
       const enhancedContent = enhanceMessageWithSkillLinks(finalContent);
@@ -519,6 +419,31 @@ export default function RepairKit() {
       };
 
       setMessages((prev) => [...prev, botMsg]);
+
+      // ENHANCED: Check for coaching session triggers
+      const mentionedSkill = MENTAL_ARMOR_SKILLS.find(skill => 
+        content.toLowerCase().includes(skill.title.toLowerCase()) ||
+        content.toLowerCase().includes(skill.id.toLowerCase())
+      );
+      
+      if (mentionedSkill && !coachingSession.isActive && 
+          (content.toLowerCase().includes('help') || 
+           content.toLowerCase().includes('coach') ||
+           content.toLowerCase().includes('practice') ||
+           content.toLowerCase().includes('try') ||
+           content.toLowerCase().includes('work on'))) {
+        startCoachingSession(mentionedSkill.id, mentionedSkill.title);
+      }
+
+      // Check for coaching session completion
+      if (coachingSession.isActive && 
+          (content.toLowerCase().includes('complete') || 
+           content.toLowerCase().includes('done') ||
+           content.toLowerCase().includes('finished') ||
+           content.toLowerCase().includes('end session'))) {
+        endCoachingSession();
+      }
+
     } catch (error) {
       console.error("Chat error:", error);
       const errorMsg: ChatMessage = {
@@ -670,6 +595,9 @@ export default function RepairKit() {
     };
 
     setMessages((prev) => [...prev, explanationMsg]);
+    
+    // Start coaching session for this skill
+    startCoachingSession(skill.id, skill.title);
     startPracticeSession(skill);
   };
 
@@ -731,8 +659,9 @@ export default function RepairKit() {
                 <strong>49 North (TechWerks, LLC)</strong>. It supplements but does not replace complete training.
               </p>
               <ul className="list-disc ml-5">
-                <li>AI responses are limited to curriculum content for accuracy</li>
-                <li>Skill suggestions use validated Mental Armor™ concepts only</li>
+                <li>AI responses use only curriculum content for accuracy and safety</li>
+                <li>Skill suggestions are validated against Mental Armor™ concepts</li>
+                <li>Emergency detection focuses coaching sessions when needed</li>
                 <li>This is not clinical advice or therapy</li>
                 <li>Use it to learn and practice established resilience skills</li>
               </ul>
@@ -829,10 +758,10 @@ export default function RepairKit() {
       <div className="text-center">
         <h2 className="text-xl font-bold text-gray-900">Mental Armor™ Maintenance & Repair Kit</h2>
         <p className="text-gray-700 mt-0.5">
-          Practice your skills, get curriculum-based training support, and access emergency resources
+          Practice your skills, get focused coaching support, and access emergency resources
         </p>
         <div className="mt-2 text-xs text-gray-500 bg-gray-50 px-3 py-1 rounded-full inline-block">
-          Enhanced with curriculum-first AI • See the Emergency Resources tab for crisis hotlines.
+          Enhanced with focused coaching • {coachingSession.isActive ? `Coaching: ${coachingSession.skillTitle}` : 'Ready for training'}
         </div>
       </div>
 
@@ -931,7 +860,7 @@ export default function RepairKit() {
                 <div className="text-center">
                   <div className="text-4xl mb-4">👥</div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">Select a Coach First</h3>
-                  <p className="text-gray-600 mb-4">Choose your coach to begin curriculum-based training.</p>
+                  <p className="text-gray-600 mb-4">Choose your coach to begin focused training.</p>
                   <button
                     onClick={() => setActiveTab("coaches")}
                     className="px-4 py-2 bg-brand-primary text-white rounded-lg hover:opacity-90"
@@ -950,9 +879,20 @@ export default function RepairKit() {
                   />
                   <div>
                     <h4 className="font-semibold text-gray-900">{selectedTrainer.name}</h4>
-                    <p className="text-sm text-gray-600">Mental Armor™ Coach</p>
+                    <p className="text-sm text-gray-600">
+                      Mental Armor™ Coach {coachingSession.isActive && `• Coaching: ${coachingSession.skillTitle}`}
+                    </p>
                   </div>
                   <div className="ml-auto flex items-center gap-2">
+                    {coachingSession.isActive && (
+                      <button
+                        onClick={endCoachingSession}
+                        className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                        title="End coaching session"
+                      >
+                        End Session
+                      </button>
+                    )}
                     {storageEnabled && messages.length > 1 && (
                       <>
                         <button
@@ -1067,7 +1007,7 @@ export default function RepairKit() {
                       </div>
 
                       {/* Enhanced Skill Suggestions with Go-Bag Navigation */}
-                      {m.suggestedSkills && m.suggestedSkills.length > 0 && (
+                      {m.suggestedSkills && m.suggestedSkills.length > 0 && !coachingSession.isActive && (
                         <div className="ml-4 space-y-3">
                           <p className="text-xs text-gray-600 flex items-center gap-1">
                             <span>💡</span>
@@ -1105,7 +1045,7 @@ export default function RepairKit() {
                                       onClick={() => handleSkillSuggestionClick(suggestion)}
                                       className="flex-1 px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors"
                                     >
-                                      Learn & Practice
+                                      Start Coaching
                                     </button>
                                     <button
                                       onClick={() => handleNavigateToGoBag(skill.id)}
@@ -1145,7 +1085,11 @@ export default function RepairKit() {
                           handleSendMessage();
                         }
                       }}
-                      placeholder={`Share your thoughts with ${selectedTrainer.name}...`}
+                      placeholder={
+                        coachingSession.isActive 
+                          ? `Working on ${coachingSession.skillTitle} with ${selectedTrainer.name}...`
+                          : `Share your thoughts with ${selectedTrainer.name}...`
+                      }
                       className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none"
                       rows={2}
                     />
@@ -1158,20 +1102,23 @@ export default function RepairKit() {
                     </button>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    AI responses use only Mental Armor™ curriculum content. Skill suggestions are curriculum-validated.
+                    {coachingSession.isActive 
+                      ? `Focused coaching session active. Say "end session" to finish.`
+                      : `AI uses Mental Armor™ curriculum only. Emergency detection provides appropriate resources.`
+                    }
                   </p>
                 </div>
 
                 <div className="border-t bg-gray-50 p-3 text-xs text-gray-600 flex items-center gap-2">
                   <span className="text-green-600">✓</span>
-                  <p>Enhanced with curriculum controls • See Emergency Resources tab for 🇺🇸🇨🇦🇬🇧🇮🇪 numbers</p>
+                  <p>Enhanced coaching flow • See Emergency Resources tab for crisis support</p>
                 </div>
               </>
             )}
           </div>
         )}
 
-        {/* Practice Sessions */}
+        {/* Practice Sessions Tab - Same as before but with coaching integration indicator */}
         {activeTab === "practice" && (
           <div className="p-6">
             {selectedSkillForPractice ? (
@@ -1201,6 +1148,15 @@ export default function RepairKit() {
                         ✕ End Session
                       </button>
                     </div>
+
+                    {coachingSession.isActive && coachingSession.skillId === selectedSkillForPractice.id && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="text-blue-800 text-sm">
+                          🎯 <strong>Coaching Session Active:</strong> Return to the Training Support tab to continue 
+                          working through this skill with {selectedTrainer?.name}.
+                        </p>
+                      </div>
+                    )}
 
                     <div className="bg-gray-50 rounded-lg p-4">
                       <h4 className="font-medium text-gray-900 mb-2">Goal:</h4>
@@ -1291,7 +1247,7 @@ export default function RepairKit() {
           </div>
         )}
 
-        {/* Resources */}
+        {/* Resources Tab - Same as before */}
         {activeTab === "resources" && (
           <div className="p-6 space-y-4">
             <div>
