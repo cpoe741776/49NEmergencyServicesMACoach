@@ -211,7 +211,7 @@ COACHING FOCUS RULES:
 - Stay encouraging but keep laser focus on the skill at hand
 
 STRICT BOUNDARIES:
-- No skill suggestions during active coaching
+- No skill suggestions during active coaching **unless the user explicitly asks for another skill or names a different skill**
 - No emergency protocols unless truly critical (explicit self-harm/suicide)
 - Keep responses under 3 sentences to maintain focus
 - Only end session if user explicitly says they want to stop or are done
@@ -505,6 +505,15 @@ function getFallbackResponse(coach?: CoachPersona): string {
   return response;
 }
 
+function userRequestsAnotherSkill(userInput: string, currentSkillId?: string) {
+  const s = userInput.toLowerCase();
+  const wantsOther =
+    /\b(other skill|another skill|different skill|something else|what else|show more skills|more skills|new skill|other options)\b/.test(s);
+
+  const mentioned = detectMentionedSkills(userInput).filter(id => id !== currentSkillId);
+  // Allow if they explicitly want other skills OR they named a different skill
+  return { allow: wantsOther || mentioned.length > 0, requestedIds: mentioned };
+}
 // ============================================================================
 // MAIN RESPONSE FUNCTION
 // ============================================================================
@@ -598,8 +607,11 @@ export async function getImprovedCoachResponse(opts: {
     text = getFallbackResponse(resolvedCoach);
   }
 
-  // In active coaching mode, don't suggest additional skills
-  if (context?.mode === "active_coaching") {
+  // In active coaching mode, normally don't suggest skills — unless the user asked for another
+if (context?.mode === "active_coaching") {
+  const { allow, requestedIds } = userRequestsAnotherSkill(userTurn, context.skillId);
+
+  if (!allow) {
     return {
       text,
       suggestedSkills: [],
@@ -607,6 +619,55 @@ export async function getImprovedCoachResponse(opts: {
       content: text,
     };
   }
+
+  // Build at most one alternative suggestion, prioritizing a named skill
+  let suggestedSkills: SkillSuggestion[] = [];
+
+  if (requestedIds.length > 0) {
+    const id = requestedIds[0];
+    const skill = MENTAL_ARMOR_SKILLS.find(s => s.id === id);
+    if (skill) {
+      suggestedSkills = [{
+        skillId: id,
+        skill,
+        confidence: 0.9,
+        curriculumQuote: skill.goal,
+        rationale: "User explicitly named a different skill while in active coaching.",
+      }];
+    }
+  } else {
+    try {
+      // Returns full SkillSuggestion objects; ensure a rationale is present
+      suggestedSkills = EnhancedSkillSuggestions.getSuggestions(userTurn, 1).map(s => ({
+  ...s,
+  rationale: s.rationale ?? "User explicitly requested another skill during active coaching.",
+}));
+
+    } catch {
+      suggestedSkills = [];
+    }
+  }
+
+  const goBagLinks = suggestedSkills.map(s => ({
+    skillId: s.skillId,
+    title: s.skill?.title || MENTAL_ARMOR_SKILLS.find(ms => ms.id === s.skillId)?.title || s.skillId,
+    url: `/go-bag/skills/${s.skillId}`,
+  }));
+
+  return {
+    text,
+    suggestedSkills,
+    suggestionMethod: "curriculum",
+    content: text,
+    mentionedSkillIds: requestedIds,
+    actions: {
+      goBagLinks,
+      practiceKitAdd: suggestedSkills.map(s => s.skillId),
+    },
+  };
+}
+
+
 
   // 3) Only suggest skills if not in active coaching and user needs guidance
   let suggestedSkills: SkillSuggestion[] = [];
