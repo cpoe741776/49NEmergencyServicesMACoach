@@ -1,7 +1,8 @@
 // src/services/improved-openai-integration.ts
+// src/services/improved-openai-integration.ts
 import { MENTAL_ARMOR_SKILLS } from "@/data/skills";
 import { EnhancedSkillSuggestions, type SkillSuggestion } from "./enhanced-skill-suggestions";
-
+import { getTrainerById, TRAINERS } from "@/data/trainers"; // ⬅️ NEW
 const MODEL = import.meta.env.VITE_OPENAI_MODEL || "gpt-4o-mini";
 const FUNCTION_URL = "/.netlify/functions/openai-chat";
 
@@ -32,8 +33,10 @@ export type ChatMsg = {
 };
 
 export type CoachPersona = {
+  id?: string;          // ⬅️ NEW (trainer id like "rhonda", "scotty", etc.)
   name: string;
   style?: string;
+  voice?: string;       // ⬅️ NEW (resolved from trainers.ts)
   guardrails?: string[];
 };
 
@@ -45,7 +48,25 @@ export type CoachResponse = {
   requiresEscalation?: boolean;
 };
 
-// ---- Refusal detection + supportive baseline ----
+// Put this near the top of the file (below types is fine)
+function resolveCoachPersona(input?: CoachPersona): CoachPersona | undefined {
+  if (!input) return undefined;
+
+  // Try resolving by id first, then by name
+  const t =
+    (input.id && getTrainerById(input.id)) ||
+    TRAINERS.find(tr => tr.id.toLowerCase() === (input.name ?? "").toLowerCase()) ||
+    TRAINERS.find(tr => tr.name.toLowerCase() === (input.name ?? "").toLowerCase());
+
+  // Merge: explicit fields on input win; otherwise fall back to trainer data
+  return {
+    id: input.id ?? t?.id,
+    name: input.name ?? t?.name ?? "Coach",
+    style: input.style,
+    voice: input.voice ?? t?.voice,     // ⬅️ pull the canonical voice from trainers.ts
+    guardrails: input.guardrails,
+  };
+}
 
 // ---- System prompt (curriculum-first) ----
 function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
@@ -316,14 +337,16 @@ export async function getImprovedCoachResponse(opts: {
   allowSuggestions?: boolean;
 }): Promise<CoachResponse> {
   const { history, userTurn, coach, allowSuggestions = true } = opts;
-
+  const resolvedCoach = resolveCoachPersona(opts.coach); // ⬅️ NEW
   // 1) If user asked about a specific skill, return exact curriculum content
   const mentionedSkills = detectMentionedSkills(userTurn);
   if (mentionedSkills.length > 0) {
     const skillResponse = getDirectSkillResponse(mentionedSkills[0], coach);
     const relatedSuggestions = allowSuggestions
+    
       ? EnhancedSkillSuggestions.getSuggestions(userTurn, 2).filter((s) => s.skillId !== mentionedSkills[0])
       : [];
+      
     return {
       text: skillResponse,
       suggestedSkills: relatedSuggestions,
@@ -346,10 +369,19 @@ export async function getImprovedCoachResponse(opts: {
   }
 
   // 3) Chat completion with system prompt (via Netlify function)
-  const sys = buildEnhancedSystemPrompt(coach);
+   // 3) chat completion with *two* system messages:
+  const sys = buildEnhancedSystemPrompt(resolvedCoach);
+  const voiceLock = {
+    role: "system" as const,
+    content:
+      `You must write *every* assistant message in the coach's voice. Do not switch tone.\n\n` +
+      `COACH VOICE:\n${resolvedCoach?.voice ?? "Professional, supportive coaching tone."}`,
+  };
+
   const messages = [
-    { role: "system" as const, content: sys },
-    ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    voiceLock,                                 // ⬅️ FIRST system message (strongest)
+    { role: "system" as const, content: sys }, // ⬅️ Your main rules + catalog
+    ...history.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
     { role: "user" as const, content: userTurn },
   ];
 
@@ -358,7 +390,7 @@ export async function getImprovedCoachResponse(opts: {
     text = await callOpenAI(messages);
   } catch (error) {
     console.warn("OpenAI call failed:", error);
-    text = getFallbackResponse(coach);
+    text = getFallbackResponse(resolvedCoach);
   }
 
   return {
@@ -375,7 +407,7 @@ export function createMentalArmorAI(config?: string | { coach?: CoachPersona; al
   let allowSuggestions = true;
 
   if (typeof config === "string") {
-    coach = { name: config };
+    coach = { id: config, name: config }; // ⬅️ id preferred; name kept for backward-compat
   } else if (config) {
     coach = config.coach;
     allowSuggestions = config.allowSuggestions ?? true;
@@ -385,17 +417,11 @@ export function createMentalArmorAI(config?: string | { coach?: CoachPersona; al
     async send(userText: string, history: ChatMsg[]) {
       return getImprovedCoachResponse({ history, userTurn: userText, coach, allowSuggestions });
     },
-
-    // Legacy compatibility
     async generateResponse(...args: unknown[]) {
       let userText = "";
       let history: ChatMsg[] = [];
-
-      if (args.length === 2) {
-        [userText, history] = args as [string, ChatMsg[]];
-      } else if (args.length === 3) {
-        [userText, , history] = args as [string, unknown, ChatMsg[]];
-      }
+      if (args.length === 2) [userText, history] = args as [string, ChatMsg[]];
+      else if (args.length === 3) [userText, , history] = args as [string, unknown, ChatMsg[]];
 
       return getImprovedCoachResponse({ history, userTurn: userText, coach, allowSuggestions });
     },
