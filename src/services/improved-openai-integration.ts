@@ -229,6 +229,77 @@ function resolveCoachPersona(input?: CoachPersona): CoachPersona | undefined {
   };
 }
 
+function wantsFullDetails(input: string): boolean {
+  const s = input.toLowerCase();
+  return /\b(all steps|full|detailed|details|everything|complete)\b/.test(s);
+}
+
+function coachingIntro(skillTitle: string, coach?: CoachPersona): string {
+  const name = coach?.name?.toLowerCase();
+  if (name === "rhonda") return `Let’s get straight to it. "${skillTitle}" is a core tool worth using with purpose.`;
+  if (name === "terry")  return `Alright, no fluff—"${skillTitle}" actually works when you use it.`;
+  if (name === "scotty") return `Hey friend, "${skillTitle}" can steady you when life gets loud.`;
+  if (name === "aj")     return `Love that you’re leaning in—"${skillTitle}" builds on strengths you already have.`;
+  if (name === "chris")  return `Solid move asking about "${skillTitle}". Growth starts with the next rep.`;
+  if (name === "jill")   return `"${skillTitle}" ties practical steps to solid psychological science.`;
+  return `Good call. "${skillTitle}" is a reliable tool when you need it.`;
+}
+
+function coachingCTA(skillTitle: string, coach?: CoachPersona): string {
+  const name = coach?.name?.toLowerCase();
+  if (name === "rhonda") return `What’s the first concrete step you’ll take with "${skillTitle}" today?`;
+  if (name === "terry")  return `Which part of "${skillTitle}" feels most doable this week?`;
+  if (name === "scotty") return `What’s one small way you’ll try "${skillTitle}" today?`;
+  if (name === "aj")     return `Which strength can you bring to "${skillTitle}" right now?`;
+  if (name === "chris")  return `What’s the next rep you’ll put in on "${skillTitle}"?`;
+  if (name === "jill")   return `Where do you see "${skillTitle}" fitting into your current context?`;
+  return `Which step of "${skillTitle}" will you try first?`;
+}
+
+function getCoachingFirstSkillResponse(userInput: string, skillId: string, coach?: CoachPersona): string {
+  const skill = MENTAL_ARMOR_SKILLS.find((s) => s.id === skillId);
+  if (!skill) return "";
+
+  const showAll = wantsFullDetails(userInput);
+  const stepsToShow = showAll ? skill.steps.length : Math.min(3, skill.steps.length);
+
+  let out = "";
+
+  // 1) On-voice intro (non-verbatim)
+  out += coachingIntro(skill.title, coach) + "\n\n";
+
+  // 2) Verbatim GOAL + WHEN (exact)
+  out += `**${skill.title}** ${skill.goal}\n\n`;
+  out += `**When to use:** ${skill.whenToUse}\n\n`;
+
+  // 3) Verbatim STEPS (partial by default)
+  out += `**Steps to practice:**`;
+  for (let i = 0; i < stepsToShow; i++) {
+    out += `\n${i + 1}. ${skill.steps[i]}`;
+  }
+
+  // Offer to expand if we truncated
+  if (!showAll && stepsToShow < skill.steps.length) {
+    out += `\n\n(There are more steps. Say **"show all steps"** for the complete sequence.)`;
+  }
+
+  // 4) Optional benefits (verbatim, short)
+  if (skill.benefits && skill.benefits.length > 0) {
+    const maxBenefits = Math.min(2, skill.benefits.length);
+    out += `\n\n**Scientific benefits:**`;
+    for (let i = 0; i < maxBenefits; i++) out += `\n• ${skill.benefits[i]}`;
+    if (skill.benefits.length > maxBenefits) {
+      out += `\n(Ask for **"more benefits"** to see additional evidence.)`;
+    }
+  }
+
+  // 5) On-voice CTA (non-verbatim)
+  out += `\n\n${coachingCTA(skill.title, coach)}`;
+
+  return out;
+}
+
+
 // ---- System prompt (curriculum-first) ----
 function buildEnhancedSystemPrompt(coach?: CoachPersona): string {
   const skillCatalog = MENTAL_ARMOR_SKILLS.map((skill) => {
@@ -468,7 +539,21 @@ export async function getImprovedCoachResponse(opts: {
   const { history, userTurn, coach, allowSuggestions = true } = opts;
   const resolvedCoach = resolveCoachPersona(opts.coach); // ⬅️ NEW
   // 1) If user asked about a specific skill, return exact curriculum content
-  const mentionedSkills = detectMentionedSkills(userTurn);
+  // 1) If user asked about a specific skill, return coaching-first curriculum content
+const mentionedSkills = detectMentionedSkills(userTurn);
+if (mentionedSkills.length > 0) {
+  const skillResponse = getCoachingFirstSkillResponse(userTurn, mentionedSkills[0], coach);
+  const relatedSuggestions = allowSuggestions
+    ? EnhancedSkillSuggestions.getSuggestions(userTurn, 2).filter((s) => s.skillId !== mentionedSkills[0])
+    : [];
+  return {
+    text: skillResponse,
+    suggestedSkills: relatedSuggestions,
+    suggestionMethod: "curriculum",
+    content: skillResponse,
+  };
+}
+
   // 0) Emergency stop for serious crime admissions (confessions)
 if (detectSeriousCrimeAdmission(userTurn)) {
   const text = seriousCrimeResponse();
