@@ -62,7 +62,13 @@ export type CoachResponse = {
     goBagLinks: { skillId: string; title: string; url: string }[];
     practiceKitAdd: string[];
   };
+  // NEW: lets the service tell the UI to advance/end coaching steps
+  coaching?: {
+    nextStep?: number;
+    end?: boolean;
+  };
 };
+
 
 // ============================================================================
 // ENHANCED EMERGENCY DETECTION (More Specific)
@@ -517,6 +523,33 @@ function userRequestsAnotherSkill(userInput: string, currentSkillId?: string) {
 // ============================================================================
 // MAIN RESPONSE FUNCTION
 // ============================================================================
+function parseCoachingStepIntent(userInput: string, ctx?: CoachingContext): { nextStep?: number; end?: boolean } {
+  if (!ctx?.skillId) return {};
+  const s = userInput.toLowerCase();
+  const total = ctx.totalSteps ?? 1;
+  const cur = ctx.currentStep ?? 1;
+
+  // explicit "step N"
+  const m = s.match(/\bstep\s*([0-9]{1,2})\b/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n >= 1 && n <= total) return { nextStep: n };
+  }
+
+  // “what’s next / next step / continue / move on / proceed…”
+  if (/\b(what'?s next|next step|continue|move on|proceed|keep going|advance)\b/.test(s)) {
+    return { nextStep: Math.min(cur + 1, total) };
+  }
+
+  // done / end session
+  if (/\b(end session|stop|done|finish(?:ed)?|complete(?:d)?)\b/.test(s)) {
+    return { end: true };
+  }
+
+  return {};
+}
+
+
 export async function getImprovedCoachResponse(opts: {
   history: ChatMsg[];
   userTurn: string;
@@ -610,15 +643,18 @@ export async function getImprovedCoachResponse(opts: {
   // In active coaching mode, normally don't suggest skills — unless the user asked for another
 if (context?.mode === "active_coaching") {
   const { allow, requestedIds } = userRequestsAnotherSkill(userTurn, context.skillId);
+  const stepIntent = parseCoachingStepIntent(userTurn, context);
 
   if (!allow) {
-    return {
-      text,
-      suggestedSkills: [],
-      suggestionMethod: "curriculum",
-      content: text,
-    };
-  }
+  return {
+    text,
+    suggestedSkills: [],
+    suggestionMethod: "curriculum",
+    content: text,
+    coaching: stepIntent, // NEW
+  };
+}
+
 
   // Build at most one alternative suggestion, prioritizing a named skill
   let suggestedSkills: SkillSuggestion[] = [];
@@ -664,6 +700,7 @@ if (context?.mode === "active_coaching") {
       goBagLinks,
       practiceKitAdd: suggestedSkills.map(s => s.skillId),
     },
+    coaching: stepIntent, // NEW
   };
 }
 

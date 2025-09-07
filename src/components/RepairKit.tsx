@@ -444,6 +444,24 @@ if (!coachingSession.isActive && lastSuggestedSkill) {
       };
 
       setMessages((prev) => [...prev, botMsg]);
+      if (aiResponse.coaching?.end && coachingSession.isActive) {
+  endCoachingSession();
+} else if (
+  typeof aiResponse.coaching?.nextStep === "number" &&
+  coachingSession.isActive &&
+  coachingSession.skillId
+) {
+  const skill = MENTAL_ARMOR_SKILLS.find(s => s.id === coachingSession.skillId);
+  const total = skill?.steps.length ?? 1;
+
+  const next = Math.max(1, Math.min(aiResponse.coaching.nextStep, total));
+
+  // update local UI state
+  setCoachingSession(prev => ({ ...prev, currentStep: next }));
+
+  // keep AI context in sync
+  aiService?.updateContext?.({ currentStep: next, totalSteps: total });
+}
 
       // ENHANCED: Check for coaching session triggers
       const mentionedSkill = MENTAL_ARMOR_SKILLS.find(skill => 
